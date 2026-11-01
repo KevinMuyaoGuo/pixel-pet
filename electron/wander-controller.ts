@@ -1,7 +1,22 @@
 export type Facing = 'left' | 'right';
 export type WanderMode = 'idle' | 'walk';
+export type ActionMode = 'wave' | 'heart';
 
-export const WANDER_CONFIG = {
+export type WanderConfig = {
+  speedDipPerSecond: number;
+  verticalDriftFactor: number;
+  tickMs: number;
+  minRestMs: number;
+  maxRestMs: number;
+  minWalkMs: number;
+  maxWalkMs: number;
+  minRandomTurnMs: number;
+  maxRandomTurnMs: number;
+  turnPauseMs: number;
+  edgeRestProbability: number;
+};
+
+export const WANDER_CONFIG: WanderConfig = {
   speedDipPerSecond: 30,
   verticalDriftFactor: 0.45,
   tickMs: 33,
@@ -34,7 +49,7 @@ export interface WanderScreen {
 type Callbacks = {
   getWindow: () => WanderWindow | null;
   isLocked: () => boolean;
-  onModeChange: (mode: WanderMode | 'wave') => void;
+  onModeChange: (mode: WanderMode | ActionMode) => void;
   onFacingChange: (facing: Facing) => void;
   onEnabledChange: (enabled: boolean) => void;
   persistPosition: () => void;
@@ -48,6 +63,7 @@ export class WanderController {
   private paused = false;
   private manualDragActive = false;
   private interactionActive = false;
+  private interactionMode: ActionMode = 'wave';
   private phase: Phase = 'stopped';
   private facing: Facing = 'right';
   private verticalDirection: -1 | 1 = 1;
@@ -66,13 +82,30 @@ export class WanderController {
   private interactionRemainingMs = 0;
   private lastTick = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private config: WanderConfig = { ...WANDER_CONFIG };
 
   constructor(private readonly screen: WanderScreen, private readonly callbacks: Callbacks) {}
 
   get isEnabled() { return this.enabled; }
   get mode(): WanderMode { return this.phase === 'walk' ? 'walk' : 'idle'; }
-  get currentMode(): WanderMode | 'wave' { return this.interactionActive ? 'wave' : this.mode; }
+  get currentMode(): WanderMode | ActionMode { return this.interactionActive ? this.interactionMode : this.mode; }
   get direction() { return this.facing; }
+
+  configure(config: Pick<WanderConfig, 'speedDipPerSecond' | 'minWalkMs' | 'maxWalkMs' | 'minRestMs' | 'maxRestMs'>) {
+    const changed = Object.entries(config).some(([key, value]) => this.config[key as keyof WanderConfig] !== value);
+    if (!changed) return;
+    this.config = { ...this.config, ...config };
+    if (!this.enabled || this.paused || this.manualDragActive || this.interactionActive) return;
+    const now = this.now();
+    if (this.phase === 'walk') {
+      this.phaseDeadline = now + this.randomDuration(this.config.minWalkMs, this.config.maxWalkMs);
+    } else if (this.phase === 'rest') {
+      this.phaseDeadline = now + this.randomDuration(this.config.minRestMs, this.config.maxRestMs);
+    }
+    this.lastTick = now;
+    this.clearTick();
+    this.scheduleTick();
+  }
 
   start() {
     if (this.enabled || this.callbacks.isLocked() || !this.getWindow()) return false;
@@ -83,7 +116,7 @@ export class WanderController {
     this.recalculateBounds(true);
     this.phase = 'rest';
     this.lastTick = this.now();
-    this.phaseDeadline = this.lastTick + this.randomDuration(WANDER_CONFIG.minRestMs, WANDER_CONFIG.maxRestMs);
+    this.phaseDeadline = this.lastTick + this.randomDuration(this.config.minRestMs, this.config.maxRestMs);
     if (this.paused) this.pausedRemainingMs = this.phaseDeadline - this.lastTick;
     this.callbacks.onModeChange('idle');
     this.callbacks.onEnabledChange(true);
@@ -130,15 +163,24 @@ export class WanderController {
   }
 
   beginWave() {
+    this.beginAction('wave');
+  }
+
+  beginAction(mode: ActionMode) {
     if (this.enabled && !this.interactionActive) {
       this.interactionActive = true;
       this.interactionRemainingMs = Math.max(0, this.phaseDeadline - this.now());
       this.clearTick();
     }
-    this.callbacks.onModeChange('wave');
+    this.interactionMode = mode;
+    this.callbacks.onModeChange(mode);
   }
 
   finishWave() {
+    this.finishAction();
+  }
+
+  finishAction() {
     if (!this.enabled || !this.interactionActive) {
       this.callbacks.onModeChange('idle');
       return;
@@ -251,7 +293,7 @@ export class WanderController {
     if (!this.enabled || this.paused || this.manualDragActive || this.interactionActive || this.timer) return;
     this.lastTick = this.now();
     const remaining = Math.max(1, this.phaseDeadline - this.lastTick);
-    const delay = this.phase === 'walk' ? WANDER_CONFIG.tickMs : remaining;
+    const delay = this.phase === 'walk' ? this.config.tickMs : remaining;
     this.timer = setTimeout(() => {
       this.timer = undefined;
       this.tick();
@@ -273,7 +315,7 @@ export class WanderController {
     if (this.phase === 'rest' && now >= this.phaseDeadline) {
       this.startWalk(now);
     } else if (this.phase === 'turn' && now >= this.phaseDeadline) {
-      if (Math.random() < WANDER_CONFIG.edgeRestProbability) this.startRest(now);
+      if (Math.random() < this.config.edgeRestProbability) this.startRest(now);
       else this.startWalk(now);
     } else if (this.phase === 'walk') {
       const activeMs = Math.max(0, Math.min(elapsedMs, this.phaseDeadline - previousTick));
@@ -283,7 +325,7 @@ export class WanderController {
         if (this.randomTurnRemainingMs <= 0) {
           this.setFacing(this.facing === 'right' ? 'left' : 'right');
           this.verticalDirection = Math.random() < 0.5 ? -1 : 1;
-          this.randomTurnRemainingMs = this.randomDuration(WANDER_CONFIG.minRandomTurnMs, WANDER_CONFIG.maxRandomTurnMs);
+          this.randomTurnRemainingMs = this.randomDuration(this.config.minRandomTurnMs, this.config.maxRandomTurnMs);
         }
         if (now >= this.phaseDeadline) this.startRest(now);
       }
@@ -293,7 +335,7 @@ export class WanderController {
 
   private startRest(now: number) {
     this.phase = 'rest';
-    this.phaseDeadline = now + this.randomDuration(WANDER_CONFIG.minRestMs, WANDER_CONFIG.maxRestMs);
+    this.phaseDeadline = now + this.randomDuration(this.config.minRestMs, this.config.maxRestMs);
     this.callbacks.onModeChange('idle');
   }
 
@@ -304,9 +346,9 @@ export class WanderController {
     if (x <= this.minX) this.setFacing('right');
     else if (x >= this.maxX) this.setFacing('left');
     this.phase = 'walk';
-    this.phaseDeadline = now + this.randomDuration(WANDER_CONFIG.minWalkMs, WANDER_CONFIG.maxWalkMs);
+    this.phaseDeadline = now + this.randomDuration(this.config.minWalkMs, this.config.maxWalkMs);
     this.verticalDirection = Math.random() < 0.5 ? -1 : 1;
-    this.randomTurnRemainingMs = this.randomDuration(WANDER_CONFIG.minRandomTurnMs, WANDER_CONFIG.maxRandomTurnMs);
+    this.randomTurnRemainingMs = this.randomDuration(this.config.minRandomTurnMs, this.config.maxRandomTurnMs);
     this.callbacks.onModeChange('walk');
   }
 
@@ -315,8 +357,8 @@ export class WanderController {
     if (!window || !this.workArea || seconds <= 0) return;
     const [x, y] = window.getPosition();
     const horizontalDirection = this.facing === 'right' ? 1 : -1;
-    const verticalSpeedFactor = this.verticalDirection * WANDER_CONFIG.verticalDriftFactor;
-    const speedScale = WANDER_CONFIG.speedDipPerSecond / Math.hypot(1, WANDER_CONFIG.verticalDriftFactor);
+    const verticalSpeedFactor = this.verticalDirection * this.config.verticalDriftFactor;
+    const speedScale = this.config.speedDipPerSecond / Math.hypot(1, this.config.verticalDriftFactor);
     const exactX = x + this.movementRemainderX + horizontalDirection * speedScale * seconds;
     const exactY = y + this.movementRemainderY + verticalSpeedFactor * speedScale * seconds;
     const nextX = this.clamp(exactX, this.minX, this.maxX);
@@ -332,7 +374,7 @@ export class WanderController {
     if (reachedHorizontalEdge) {
       this.setFacing(this.facing === 'right' ? 'left' : 'right');
       this.phase = 'turn';
-      this.phaseDeadline = this.now() + WANDER_CONFIG.turnPauseMs;
+      this.phaseDeadline = this.now() + this.config.turnPauseMs;
       this.callbacks.onModeChange('idle');
     }
   }

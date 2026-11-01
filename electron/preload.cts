@@ -1,10 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { AppSettingsPatch, AppSnapshot } from './settings-types.js';
 
 type UiState = {
   paused: boolean;
   locked: boolean;
   roaming: boolean;
-  mode: 'idle' | 'walk' | 'wave' | 'dragging';
+  mode: 'idle' | 'walk' | 'wave' | 'heart' | 'dragging';
   direction: 'left' | 'right';
 };
 type ScreenPoint = { screenX: number; screenY: number };
@@ -12,8 +13,8 @@ type ScreenPoint = { screenX: number; screenY: number };
 contextBridge.exposeInMainWorld('petBridge', {
   getUiState: (): Promise<UiState> => ipcRenderer.invoke('pet:get-ui-state'),
   setRoaming: (enabled: boolean) => ipcRenderer.send('pet:set-roaming', enabled),
-  beginWave: () => ipcRenderer.send('pet:wave-start'),
-  finishWave: () => ipcRenderer.send('pet:wave-finish'),
+  startAction: (mode: 'wave' | 'heart') => ipcRenderer.send('pet:action-start', mode),
+  finishAction: () => ipcRenderer.send('pet:action-finish'),
   beginDrag: (point: ScreenPoint) => ipcRenderer.send('pet:begin-drag', point),
   dragTo: (point: ScreenPoint) => ipcRenderer.send('pet:drag-to', point),
   endDrag: () => ipcRenderer.send('pet:end-drag'),
@@ -22,5 +23,19 @@ contextBridge.exposeInMainWorld('petBridge', {
     const listener = (_event: Electron.IpcRendererEvent, state: UiState) => callback(state);
     ipcRenderer.on('pet:ui-state', listener);
     return () => ipcRenderer.removeListener('pet:ui-state', listener);
+  },
+});
+
+contextBridge.exposeInMainWorld('appBridge', {
+  getSnapshot: (): Promise<AppSnapshot> => ipcRenderer.invoke('app:get-snapshot'),
+  updateSettings: (patch: AppSettingsPatch): Promise<AppSnapshot> => ipcRenderer.invoke('app:update-settings', patch),
+  resetSettings: (): Promise<AppSnapshot> => ipcRenderer.invoke('app:reset-settings'),
+  setPetVisible: (visible: boolean) => ipcRenderer.send('app:set-pet-visible', visible),
+  setRoaming: (enabled: boolean) => ipcRenderer.send('app:set-roaming', enabled),
+  openSettings: () => ipcRenderer.send('app:open-settings'),
+  onSnapshot: (callback: (snapshot: AppSnapshot) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, snapshot: AppSnapshot) => callback(snapshot);
+    ipcRenderer.on('app:snapshot-changed', listener);
+    return () => ipcRenderer.removeListener('app:snapshot-changed', listener);
   },
 });

@@ -51,18 +51,22 @@ function useAnimationFrame(mode: AnimationName, facing: Facing, paused: boolean,
 
     if (frames.length > 1) {
       let timer = 0;
-      timer = window.setInterval(() => {
-        const next = frame + 1;
-        if (next >= frames.length && !definition.loop) {
-          setFrameIndex(frames.length - 1);
-          window.clearInterval(timer);
-          onComplete();
-          return;
-        }
-        frame = next % frames.length;
-        setFrameIndex(frame);
-      }, 1000 / Math.max(1, definition.framesPerSecond));
-      return () => window.clearInterval(timer);
+      const scheduleNextFrame = () => {
+        const delay = definition.frameDurationsMs?.[frame] ?? 1000 / Math.max(1, definition.framesPerSecond);
+        timer = window.setTimeout(() => {
+          const next = frame + 1;
+          if (next >= frames.length && !definition.loop) {
+            setFrameIndex(frames.length - 1);
+            onComplete();
+            return;
+          }
+          frame = next % frames.length;
+          setFrameIndex(frame);
+          scheduleNextFrame();
+        }, delay);
+      };
+      scheduleNextFrame();
+      return () => window.clearTimeout(timer);
     }
 
     if (!definition.loop && definition.durationMs && definition.fallbackMotion !== 'wave') {
@@ -78,6 +82,8 @@ function Pet() {
   const [state, dispatch] = React.useReducer(petReducer, initialState);
   const [framesByAnimation, setFramesByAnimation] = React.useState<Partial<Record<AnimationName, LoadedAnimation>>>({});
   const [framePreloadComplete, setFramePreloadComplete] = React.useState(false);
+  const [allowClickHeart, setAllowClickHeart] = React.useState(true);
+  const [petScalePercent, setPetScalePercent] = React.useState(100);
   const pointerStart = React.useRef<{ id: number; x: number; y: number; dragging: boolean } | null>(null);
 
   React.useEffect(() => {
@@ -88,6 +94,21 @@ function Pet() {
       setFramePreloadComplete(true);
     });
     return () => { active = false; };
+  }, []);
+
+  React.useEffect(() => {
+    let active = true;
+    void window.appBridge.getSnapshot().then((snapshot) => {
+      if (active) {
+        setAllowClickHeart(snapshot.settings.allowClickHeart);
+        setPetScalePercent(snapshot.settings.petScalePercent);
+      }
+    });
+    const unsubscribe = window.appBridge.onSnapshot((snapshot) => {
+      setAllowClickHeart(snapshot.settings.allowClickHeart);
+      setPetScalePercent(snapshot.settings.petScalePercent);
+    });
+    return () => { active = false; unsubscribe(); };
   }, []);
 
   React.useEffect(() => {
@@ -104,7 +125,7 @@ function Pet() {
 
   const handleAnimationComplete = React.useCallback(() => {
     dispatch({ type: 'set-mode', mode: 'idle' });
-    window.petBridge.finishWave();
+    window.petBridge.finishAction();
   }, []);
   const currentAnimation: AnimationName = state.mode === 'paused'
     ? (state.beforePause === 'dragging' || state.beforePause === 'paused' ? 'idle' : state.beforePause)
@@ -133,6 +154,7 @@ function Pet() {
   const statusText = state.mode === 'paused' ? '动画已暂停'
     : state.mode === 'dragging' ? '正在拖动'
       : state.mode === 'wave' ? '挥手中'
+        : state.mode === 'heart' ? '比心中'
         : state.mode === 'walk' ? '行走中'
           : state.mode === 'idle' ? '待机' : state.mode;
 
@@ -160,9 +182,9 @@ function Pet() {
     if (start.dragging) {
       window.petBridge.endDrag();
       dispatch({ type: 'set-mode', mode: 'idle' });
-    } else if (!state.locked && state.mode !== 'paused') {
-      window.petBridge.beginWave();
-      dispatch({ type: 'set-mode', mode: 'wave' });
+    } else if (!state.locked && state.mode !== 'paused' && allowClickHeart) {
+      window.petBridge.startAction('heart');
+      dispatch({ type: 'set-mode', mode: 'heart' });
     }
   };
 
@@ -190,7 +212,7 @@ function Pet() {
         className="pet-art"
         src={characterImage}
         alt="Q版桌宠"
-        style={{ height: DISPLAY_HEIGHT, '--direction-scale': state.facing === 'left' && !usesDirectionalFrames ? -1 : 1 } as React.CSSProperties}
+        style={{ height: DISPLAY_HEIGHT * petScalePercent / 100, '--direction-scale': state.facing === 'left' && !usesDirectionalFrames && currentAnimation !== 'heart' ? -1 : 1 } as React.CSSProperties}
         draggable={false}
         onAnimationEnd={(event) => {
           if (event.animationName === 'wave-gesture' && state.mode === 'wave') handleAnimationComplete();

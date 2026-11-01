@@ -1,6 +1,9 @@
 {
   "name": "pixel-pet",
   "version": "1.0.0",
+  "productName": "Pixel Pet",
+  "description": "macOS pixel desktop companion",
+  "author": "Kevin Muyao Guo",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",
@@ -8,21 +11,57 @@
     "predev": "tsc -p electron/tsconfig.json",
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:127.0.0.1:5173 && electron .\"",
     "build": "tsc -b && vite build && tsc -p electron/tsconfig.json",
-    "start": "electron ."
+    "start": "electron .",
+    "build:icons": "swift scripts/generate-icons.swift",
+    "package:mac": "npm run build && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ electron-builder --mac dir --arm64 && mkdir -p release/dmg-staging && rm -rf \"release/dmg-staging/Pixel Pet.app\" && ditto \"release/mac-arm64/Pixel Pet.app\" \"release/dmg-staging/Pixel Pet.app\" && ln -sfn /Applications release/dmg-staging/Applications && hdiutil create -volname \"Pixel Pet\" -srcfolder release/dmg-staging -ov -format UDZO \"release/Pixel Pet-1.0.0-arm64.dmg\""
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "electron": "latest",
     "react": "latest",
     "react-dom": "latest",
     "vite": "latest"
   },
   "devDependencies": {
+    "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "@types/node": "latest",
     "concurrently": "latest",
+    "electron-builder": "^26.18.0",
     "typescript": "latest",
-    "wait-on": "latest"
+    "wait-on": "latest",
+    "electron": "latest"
+  },
+  "build": {
+    "appId": "com.kevinmuyaoguo.pixelpet",
+    "productName": "Pixel Pet",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/PixelPetTemplate.png",
+        "to": "PixelPetTemplate.png"
+      },
+      {
+        "from": "assets/PixelPetTemplate@2x.png",
+        "to": "PixelPetTemplate@2x.png"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "icon": "assets/pixel-pet.icns",
+      "target": [
+        "dmg"
+      ],
+      "identity": null,
+      "hardenedRuntime": false,
+      "notarize": false
+    }
   }
 }

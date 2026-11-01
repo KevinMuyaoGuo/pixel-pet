@@ -1,10 +1,12 @@
-export type AnimationName = 'idle' | 'wave' | 'walk' | 'sleeping' | 'thinking' | 'happy';
+export type AnimationName = 'idle' | 'wave' | 'heart' | 'walk' | 'sleeping' | 'thinking' | 'happy';
 export type Facing = 'left' | 'right';
 
 export type AnimationDefinition = {
   frames: string[];
   directionalFrames?: Partial<Record<Facing, string[]>>;
   framesPerSecond: number;
+  /** Optional per-frame display time in milliseconds, indexed from frame 1. */
+  frameDurationsMs?: number[];
   loop: boolean;
   durationMs?: number;
   fallback: AnimationName | 'static';
@@ -18,11 +20,21 @@ const walkFrames: Record<Facing, string[]> = {
   left: [1, 2, 3].map((frame) => asset(`animations/walk/walk_left_${String(frame).padStart(2, '0')}.png`)),
   right: [1, 2, 3].map((frame) => asset(`animations/walk/walk_right_${String(frame).padStart(2, '0')}.png`)),
 };
+const heartFrames = Array.from({ length: 8 }, (_, index) =>
+  asset(`animations/heart/heart_${String(index + 1).padStart(2, '0')}.png`),
+);
 
 /** Add frame paths and timing here to register another animation clip. */
 export const ANIMATIONS: Record<AnimationName, AnimationDefinition> = {
   idle: { frames: idleFrames, framesPerSecond: 3, loop: true, fallback: 'static' },
   wave: { frames: [], framesPerSecond: 8, loop: false, durationMs: 680, fallback: 'idle', fallbackMotion: 'wave' },
+  heart: {
+    frames: heartFrames,
+    framesPerSecond: 4,
+    loop: false,
+    durationMs: 2_000,
+    fallback: 'idle',
+  },
   walk: {
     frames: [],
     directionalFrames: walkFrames,
