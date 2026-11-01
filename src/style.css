@@ -1,0 +1,16 @@
+* { box-sizing: border-box; }
+html, body, #root { width: 100%; height: 100%; margin: 0; padding: 0; background: transparent !important; overflow: hidden; }
+body { -webkit-app-region: no-drag; }
+.pet-window { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: transparent; user-select: none; -webkit-user-select: none; touch-action: none; }
+.pet-stage { display: flex; align-items: center; justify-content: center; }
+.pet-art { --direction-scale: 1; display: block; width: auto; max-width: 100%; object-fit: contain; image-rendering: pixelated; -webkit-user-drag: none; transform-origin: center bottom; transform: scaleX(var(--direction-scale)); transition: filter 160ms ease-out; }
+.pet-window[data-visual-mode="idle"][data-idle-frames="false"] .pet-stage { animation: float 3.2s ease-in-out infinite; }
+.pet-window[data-hovered="true"] .pet-art { filter: brightness(1.04); }
+.pet-window[data-visual-mode="wave"][data-has-frames="false"] .pet-art { animation: wave-gesture 680ms cubic-bezier(.2,.8,.3,1) both; }
+.pet-window[data-visual-mode="walk"][data-has-frames="false"] .pet-stage { animation: walk-in-place 520ms ease-in-out infinite; }
+.pet-window[data-visual-mode="dragging"] .pet-art { transform: scaleX(var(--direction-scale)) scale(1.02); }
+.pet-window[data-mode="paused"] .pet-stage,
+.pet-window[data-mode="paused"] .pet-art { animation-play-state: paused !important; }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@keyframes wave-gesture { 0%, 100% { transform: scaleX(var(--direction-scale)) translateY(0) rotate(0); } 20% { transform: scaleX(var(--direction-scale)) translateY(-7px) rotate(-3deg); } 42% { transform: scaleX(var(--direction-scale)) translateY(-4px) rotate(2.5deg); } 64% { transform: scaleX(var(--direction-scale)) translateY(-6px) rotate(-2deg); } 82% { transform: scaleX(var(--direction-scale)) translateY(-1px) rotate(1deg); } }
+@keyframes walk-in-place { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(-2px, -1px); } 50% { transform: translate(0, 0); } 75% { transform: translate(2px, -1px); } }
