@@ -1,3 +1,9 @@
+<p align="left">
+  <img src="assets/demo.gif"
+       height="180"
+       alt="">
+</p>
+
 🇬🇧English
 
 # Pixel Pet
@@ -103,8 +109,6 @@ The Electron main process is the only component that writes configuration. The d
 * **The current macOS package targets Apple Silicon (**`arm64`).
 * **The current package is unsigned and not notarized.**
 * **Public distribution requires Developer ID signing and Apple notarization.**
-
-
 
 🇨🇳中文
 
