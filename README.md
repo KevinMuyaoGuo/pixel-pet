@@ -1,99 +1,101 @@
 # Pixel Pet
 
-**macOS 像素桌宠，使用 Electron、TypeScript、React 和 Vite 构建。**  桌宠支持逐帧动作、桌面漫步、菜单栏控制、独立设置面板和位置记忆。
+**A pixel-art desktop companion for macOS, built with Electron, TypeScript, React, and Vite.** It features frame-based animations, desktop roaming, menu bar controls, a standalone settings window, and saved window position.
 
-[English](README.en.md)
+[简体中文](README.zh-CN.md)
 
-![Pixel Pet 演示](assets/demo.gif)
+<p align="left">
+  <img src="assets/demo.gif" height="180" alt="Pixel Pet demo">
+</p>
 
-## 功能
+## Features
 
-- 透明、无边框、始终置顶的桌宠窗口
-- idle、walk、heart 等逐帧动画
-- 自主漫步、随机停留、屏幕边缘检测和转向
-- 菜单栏控制、独立设置面板、动画暂停和位置锁定
-- 本地设置与桌宠位置记忆
-- 通过安全 preload / IPC 在渲染进程与 Electron 主进程间通信
+- Transparent, frameless, always-on-top pet window
+- Frame-based `idle`, `walk`, `heart`, and other animations
+- Autonomous roaming, random pauses, screen-edge detection, and turning
+- Menu bar controls, standalone settings, animation pause, and position lock
+- Persistent local settings and window position
+- Secure communication between the Electron main process and renderer through preload and IPC
 
-## 开发运行
+## Run in Development
 
 ```sh
 npm install
 npm run dev
 ```
 
-按 `⌘Q` 或从菜单栏选择「退出应用」退出。关闭设置窗口只会关闭设置面板；关闭桌宠窗口会隐藏桌宠，可通过菜单栏重新显示。
+Press `⌘Q` or choose **Quit** from the menu bar menu to exit. Closing Settings only closes the settings window. Closing the pet window hides the pet; you can show it again from the menu bar.
 
-## 构建 macOS 测试版
+## Build a macOS Test Version
 
-当前构建面向 Apple Silicon（`arm64`）。在 macOS 上运行：
+The current build targets Apple Silicon (`arm64`). Run these commands on macOS:
 
 ```sh
 npm run build:icons
 npm run package:mac
 ```
 
-应用和 DMG 输出在 `release/`。当前打包脚本清除旧的中间 `.app` 和 DMG staging 目录，但不会删除旧 DMG；新测试安装包使用 `unsigned` 文件名，并自动生成 SHA256 文件。
+The app and DMG are written to `release/`. The packaging script clears the old intermediate `.app` and DMG staging directory, but preserves existing DMG files. The test installer uses `unsigned` in its filename and includes a generated SHA256 file.
 
-## 安装和首次打开
+## Install and Open for the First Time
 
-1. 下载 `Pixel Pet-1.0.0-arm64-unsigned.dmg`，并核对随附的 `.sha256` 文件。
-2. 双击 DMG，将 `Pixel Pet.app` 拖到 `Applications` 快捷方式。
-3. 从「应用程序」中尝试打开 Pixel Pet。
-4. 如果 macOS 阻止打开，前往「系统设置 → 隐私与安全性」，在安全性区域选择针对 Pixel Pet 的「仍要打开 / Open Anyway」，确认后再次打开应用。此按钮通常会在首次尝试打开后出现。
+1. Download `Pixel Pet-1.0.0-arm64-unsigned.dmg` and verify it against the accompanying `.sha256` file.
+2. Open the DMG and drag `Pixel Pet.app` onto the **Applications** shortcut.
+3. Try to open Pixel Pet from Applications.
+4. If macOS blocks it, open **System Settings → Privacy & Security**. In the Security section, choose **Open Anyway** for Pixel Pet, confirm, then open the app again.
 
-如果 macOS 显示「文件已损坏」且上述授权入口不可用，可在确认 DMG 来源可信、SHA256 匹配后，仅移除这个应用的下载隔离标记：
+If macOS reports that the app is “damaged” and the approval option is unavailable, first confirm that the DMG came from a trusted source and its SHA256 matches. You can then remove the download quarantine attribute from this app only:
 
 ```sh
 xattr -dr com.apple.quarantine "/Applications/Pixel Pet.app"
 ```
 
-然后再次打开应用。这只处理 Pixel Pet，不会关闭或全局降低 Gatekeeper。若应用仍无法启动，请停止运行并联系发布者，不要尝试关闭系统安全功能。
+Try opening the app again. This command only affects Pixel Pet; it does not disable or globally weaken Gatekeeper. If the app still will not launch, stop and contact the publisher instead of disabling system security.
 
-Apple 关于手动批准未识别应用的说明：[Safely open apps on your Mac](https://support.apple.com/en-us/102445)。
+See Apple's instructions for [safely opening apps on a Mac](https://support.apple.com/en-us/102445).
 
-## 测试版的签名与安全限制
+## Signing and Security Limitations
 
-此 DMG 是**未签名、未公证的个人测试构建**：项目没有 Apple Developer ID 证书或公证凭据。配置为 `identity: null`、`hardenedRuntime: false`、`notarize: false`、`forceCodeSigning: false`；打包脚本关闭签名身份自动发现并清除已知的 `CSC_*` / `APPLE_*` 签名与公证凭据变量。没有使用 `identity: "-"` 执行 Ad-hoc Bundle 签名。
+This DMG is an **unsigned, non-notarized personal test build**. The project has no Apple Developer ID certificate or notarization credentials. Configuration sets `identity: null`, `hardenedRuntime: false`, `notarize: false`, and `forceCodeSigning: false`. The packaging script disables automatic identity discovery and clears the known `CSC_*` / `APPLE_*` signing and notarization credential variables. It does not use `identity: "-"` to Ad-hoc sign the app bundle.
 
-检查结果：应用包没有 Team ID，也没有 `Contents/_CodeSignature` 资源封印目录。Electron 的 arm64 主可执行文件自身带有链接器生成的 `adhoc,linker-signed` CodeDirectory；这不是 Developer ID 签名，也不是 electron-builder 对整个应用包所做的 Ad-hoc 签名。`codesign --verify --deep --strict` 因该可执行文件没有应用包资源封印而返回失败，这是此未签名包的限制。实际构建已通过 macOS UI 启动并显示桌宠。
+Inspection found no Team ID and no `Contents/_CodeSignature` resource seal in the app bundle. Electron's arm64 main executable does contain a linker-generated `adhoc,linker-signed` CodeDirectory. This is not a Developer ID signature and was not applied by electron-builder as an Ad-hoc app-bundle signature. Strict `codesign --verify --deep --strict` verification fails because this unsigned app has no bundle resource seal. The built app was launched through the macOS UI and displayed the pet successfully.
 
-未签名应用无法让其他 Mac 自动验证发布者身份或由 Apple 检查恶意软件，因此 Gatekeeper 可能阻止首次运行。手动批准表示用户选择继续运行，并不代表应用已获得 Apple 签名或公证。公开分发应使用 Developer ID 签名并完成 Apple 公证。
+An unsigned app cannot let another Mac verify the publisher's identity or receive Apple's malware checks, so Gatekeeper may block its first launch. Manually approving the app means the user chose to continue; it does not mean Apple has signed or notarized the app. Public distribution should use Developer ID signing and Apple notarization.
 
-当前 DMG 只包含 Apple Silicon `arm64` 构建，不适用于 Intel Mac。未签名测试构建的 macOS 登录启动功能也不保证可靠。
+This DMG contains only an Apple Silicon `arm64` build and does not run on Intel Macs. Login-at-startup behavior is not guaranteed for an unsigned test build.
 
-## SHA256 校验
+## Verify the SHA256 Checksum
 
-DMG 旁边的 `Pixel Pet-1.0.0-arm64-unsigned.dmg.sha256` 包含 SHA256 摘要。此构建的摘要为 `2c6d166ddeabec5dd4fbabcd64b7e7d8bdbb96546d2c2322e3ff6832c6a10aa7`。下载 DMG 和 sidecar 文件后，在 Terminal 中运行：
+The adjacent `Pixel Pet-1.0.0-arm64-unsigned.dmg.sha256` file contains the DMG's SHA256 digest. This build's digest is `2c6d166ddeabec5dd4fbabcd64b7e7d8bdbb96546d2c2322e3ff6832c6a10aa7`. After downloading the DMG and sidecar file, run:
 
 ```sh
 cd ~/Downloads
 shasum -a 256 -c "Pixel Pet-1.0.0-arm64-unsigned.dmg.sha256"
 ```
 
-显示 `OK` 表示文件内容与摘要匹配。发布者应通过独立且可信的渠道提供摘要，避免 DMG 和摘要一起被替换。
+`OK` means the downloaded file matches the digest. The publisher should provide the digest through an independent, trusted channel so an attacker cannot replace both the DMG and checksum together.
 
-## 设置和本地数据
+## Settings and Local Data
 
-设置面板包含常规、外观和行为分类。设置变更会立即写入 Electron `userData` 目录：
+Settings are organized into General, Appearance, and Behavior sections. Changes are saved in Electron's `userData` directory:
 
-- `settings.json`：带 schema 版本的应用设置
-- `pet-window.json`：桌宠窗口位置
+- `settings.json`: application settings with a schema version
+- `pet-window.json`: desktop pet window position
 
-主进程是配置的唯一写入者。渲染进程通过 preload 暴露的类型化 IPC 访问有限字段；`contextIsolation` 保持开启，渲染进程不能直接访问 Node.js。
+The main process is the only writer of configuration. Renderers access limited, typed fields through IPC exposed by preload. `contextIsolation` remains enabled, and renderer processes do not have direct Node.js access.
 
-## 主要模块
+## Main Modules
 
-| 文件/目录 | 职责 |
+| File or directory | Responsibility |
 | --- | --- |
-| `electron/main.ts` | Tray、窗口、菜单、登录项、Dock 和 IPC |
-| `electron/settings-store.ts`、`electron/settings-types.ts` | 版本化配置与校验 |
-| `electron/wander-controller.ts` | 桌宠窗口移动与漫步控制 |
-| `src/main.tsx`、`src/animation-system.ts` | 桌宠渲染与逐帧动画 |
-| `src/settings-main.tsx`、`src/settings.css`、`settings.html` | 独立设置窗口 |
-| `public/` | 角色图片与动画素材 |
-| `assets/` | 应用图标与菜单栏模板图标 |
+| `electron/main.ts` | Tray, windows, menus, login items, Dock, and IPC |
+| `electron/settings-store.ts`, `electron/settings-types.ts` | Versioned settings and validation |
+| `electron/wander-controller.ts` | Pet window movement and roaming control |
+| `src/main.tsx`, `src/animation-system.ts` | Pet rendering and frame-based animation |
+| `src/settings-main.tsx`, `src/settings.css`, `settings.html` | Standalone settings window |
+| `public/` | Character image and animation assets |
+| `assets/` | App and menu bar template icons |
 
-## 许可
+## License
 
-本仓库当前未声明开源许可证。若要公开复用或再分发，请先添加适当的 LICENSE，并确认角色图片及其他素材的授权范围。
+This repository does not currently declare an open-source license. Before public reuse or redistribution, add an appropriate LICENSE file and confirm the licensing terms for the character art and other assets.
