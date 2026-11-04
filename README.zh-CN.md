@@ -35,16 +35,22 @@ npm run build:icons
 npm run package:mac
 ```
 
-应用和 DMG 输出在 `release/`。打包脚本会清理旧的中间 `.app` 和 DMG staging 目录，但保留已有 DMG。测试安装包文件名带有 `unsigned`，并自动生成 SHA256 文件。
+应用和 DMG 输出在 `release/`。打包脚本会清理旧的中间 `.app` 和 DMG staging 目录，但保留已有 DMG。安装包文件名为 `PixelPet-1.0.0-arm64.dmg`。每次打包还会将 `Allow-PixelPet.command` 复制到 `release/`，方便随 DMG 一起发送。
 
 ## 安装和首次打开
 
-1. 下载 `Pixel Pet-1.0.0-arm64-unsigned.dmg`，并核对随附的 `.sha256` 文件。
-2. 双击 DMG，将 `Pixel Pet.app` 拖到 `Applications` 快捷方式。
-3. 从「应用程序」中尝试打开 Pixel Pet。
-4. 如果 macOS 阻止打开，前往「系统设置 → 隐私与安全性」，在安全性区域选择针对 Pixel Pet 的「仍要打开 / Open Anyway」，确认后再次打开应用。
+1. 从可信的发布来源下载 `PixelPet-1.0.0-arm64.dmg`，以及发布者提供的 `Allow-PixelPet.command`（如有）。
+2. 先退出正在运行的 Pixel Pet。双击 DMG，将 `Pixel Pet.app` 拖到 `Applications` 快捷方式；更新时选择替换已安装的版本。
+3. 如果下载了配套脚本，安装完成后双击 `Allow-PixelPet.command`。终端会打开并显示确认弹窗；阅读说明，确认信任此版本后点击「继续」。
+4. 脚本提示处理成功后，点击「好」。脚本所在的独立终端窗口会自动关闭；没有其他终端窗口时，终端应用也会退出。之后从「应用程序」打开 Pixel Pet。脚本不会自动启动桌宠。
 
-如果 macOS 显示「文件已损坏」且上述授权入口不可用，请先确认 DMG 来源可信且 SHA256 匹配。之后可以只移除该应用的下载隔离标记：
+脚本只移除 `/Applications/Pixel Pet.app` 的下载隔离标记，会校验应用标识，不使用 `sudo`，也不会对应用签名或关闭全局 Gatekeeper。取消或报错时，弹窗会说明结果，然后脚本退出。以后替换为新版本时，可能需要再次运行脚本。
+
+自动关闭窗口需要使用 macOS 自带的「终端」，并在系统询问时允许控制「终端」。含有其他标签页的窗口会保留。如果未授予权限或使用其他终端应用，脚本结束后请手动关闭对应窗口。
+
+下载的 `.command` 脚本自身也可能被 macOS 拦截，因此不能保证首次运行完全没有安全提示。如果应用或脚本被拦截，先尝试打开一次，再到「系统设置 → 隐私与安全性」查看是否出现「仍要打开 / Open Anyway」，如有则按提示确认。
+
+如果 macOS 显示「文件已损坏」且上述授权入口不可用，请先确认 DMG 来源可信。之后可以只移除该应用的下载隔离标记：
 
 ```sh
 xattr -dr com.apple.quarantine "/Applications/Pixel Pet.app"
@@ -63,17 +69,6 @@ Apple 的说明：[在 Mac 上安全地打开 App](https://support.apple.com/en-
 未签名应用无法让其他 Mac 自动验证发布者身份或由 Apple 检查恶意软件，因此 Gatekeeper 可能阻止首次运行。手动批准表示用户选择继续运行，并不代表应用已获得 Apple 签名或公证。正式公开分发应使用 Developer ID 签名并完成 Apple 公证。
 
 当前 DMG 只包含 Apple Silicon `arm64` 构建，不适用于 Intel Mac。未签名测试构建的 macOS 登录启动功能也不保证可靠。
-
-## SHA256 校验
-
-DMG 旁边的 `Pixel Pet-1.0.0-arm64-unsigned.dmg.sha256` 包含 SHA256 摘要。下载 DMG 和 sidecar 文件后，在 Terminal 中运行：
-
-```sh
-cd ~/Downloads
-shasum -a 256 -c "Pixel Pet-1.0.0-arm64-unsigned.dmg.sha256"
-```
-
-显示 `OK` 表示文件内容与摘要匹配。发布者应通过独立且可信的渠道提供摘要，避免 DMG 和摘要一起被替换。
 
 ## 设置和本地数据
 

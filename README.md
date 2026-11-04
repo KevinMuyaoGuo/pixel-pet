@@ -35,16 +35,22 @@ npm run build:icons
 npm run package:mac
 ```
 
-The app and DMG are written to `release/`. The packaging script clears the old intermediate `.app` and DMG staging directory, but preserves existing DMG files. The test installer uses `unsigned` in its filename and includes a generated SHA256 file.
+The app and DMG are written to `release/`. The packaging script clears the old intermediate `.app` and DMG staging directory, but preserves existing DMG files. The installer is named `PixelPet-1.0.0-arm64.dmg`. Each build also copies `Allow-PixelPet.command` to `release/` so it can be distributed alongside the DMG.
 
 ## Install and Open for the First Time
 
-1. Download `Pixel Pet-1.0.0-arm64-unsigned.dmg` and verify it against the accompanying `.sha256` file.
-2. Open the DMG and drag `Pixel Pet.app` onto the **Applications** shortcut.
-3. Try to open Pixel Pet from Applications.
-4. If macOS blocks it, open **System Settings → Privacy & Security**. In the Security section, choose **Open Anyway** for Pixel Pet, confirm, then open the app again.
+1. Download `PixelPet-1.0.0-arm64.dmg` and, if provided, `Allow-PixelPet.command` from the trusted release source.
+2. Quit any running copy of Pixel Pet. Open the DMG and drag `Pixel Pet.app` onto the **Applications** shortcut. When updating, replace the installed copy.
+3. If you downloaded the companion script, double-click `Allow-PixelPet.command` after installing the app. Terminal opens and a confirmation dialog appears. Review the message and click **Continue** only if you trust this release.
+4. When the script reports success, click **OK**. Its standalone Terminal window closes automatically; Terminal also quits if no other windows remain. Then open Pixel Pet from **Applications**. The script does not launch the app for you.
 
-If macOS reports that the app is “damaged” and the approval option is unavailable, first confirm that the DMG came from a trusted source and its SHA256 matches. You can then remove the download quarantine attribute from this app only:
+The script only removes download quarantine from `/Applications/Pixel Pet.app`, checks the app's bundle identifier, and does not use `sudo`. It does not sign the app or disable Gatekeeper globally. If you cancel or an error occurs, the dialog explains the result before the script exits. You may need to run it again after replacing the app with a new version.
+
+Automatic window closing requires Apple's Terminal app and permission to control Terminal if macOS requests it. Windows containing other tabs are kept open. If permission is denied or another terminal app is used, close the script's window manually after it finishes.
+
+A downloaded `.command` file may itself be blocked by macOS, so this method does not guarantee a prompt-free first run. If macOS blocks the app or script, try opening it once, then check **System Settings → Privacy & Security → Open Anyway** if that option appears.
+
+If macOS reports that the app is “damaged” and the approval option is unavailable, confirm that the DMG came from a trusted source. You can then remove the download quarantine attribute from this app only:
 
 ```sh
 xattr -dr com.apple.quarantine "/Applications/Pixel Pet.app"
@@ -63,17 +69,6 @@ Inspection found no Team ID and no `Contents/_CodeSignature` resource seal in th
 An unsigned app cannot let another Mac verify the publisher's identity or receive Apple's malware checks, so Gatekeeper may block its first launch. Manually approving the app means the user chose to continue; it does not mean Apple has signed or notarized the app. Public distribution should use Developer ID signing and Apple notarization.
 
 This DMG contains only an Apple Silicon `arm64` build and does not run on Intel Macs. Login-at-startup behavior is not guaranteed for an unsigned test build.
-
-## Verify the SHA256 Checksum
-
-The adjacent `Pixel Pet-1.0.0-arm64-unsigned.dmg.sha256` file contains the DMG's SHA256 digest. This build's digest is `2c6d166ddeabec5dd4fbabcd64b7e7d8bdbb96546d2c2322e3ff6832c6a10aa7`. After downloading the DMG and sidecar file, run:
-
-```sh
-cd ~/Downloads
-shasum -a 256 -c "Pixel Pet-1.0.0-arm64-unsigned.dmg.sha256"
-```
-
-`OK` means the downloaded file matches the digest. The publisher should provide the digest through an independent, trusted channel so an attacker cannot replace both the DMG and checksum together.
 
 ## Settings and Local Data
 
