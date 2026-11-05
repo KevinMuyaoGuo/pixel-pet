@@ -1,5 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { DEFAULT_APP_SETTINGS } from '../electron/settings-types';
 import { ANIMATIONS, NO_FRAMES, preloadAnimationFrames, STATIC_PET_IMAGE, type AnimationName, type Facing, type LoadedAnimation } from './animation-system';
 import './style.css';
 
@@ -36,44 +37,59 @@ function petReducer(state: PetState, action: PetAction): PetState {
   }
 }
 
-function useAnimationFrame(mode: AnimationName, facing: Facing, paused: boolean, framesByAnimation: Partial<Record<AnimationName, LoadedAnimation>>, onComplete: () => void) {
+function useAnimationFrame(mode: AnimationName, facing: Facing, paused: boolean, playbackRate: number, framesByAnimation: Partial<Record<AnimationName, LoadedAnimation>>, onComplete: () => void) {
   const [frameIndex, setFrameIndex] = React.useState(0);
+  const playback = React.useRef<{ frame: number; remainingMs: number | null }>({ frame: 0, remainingMs: null });
   const clip = framesByAnimation[mode];
   const directionalFrames = clip?.directionalFrames[facing] ?? NO_FRAMES;
   const hasDirectionalFrames = directionalFrames.length > 0;
   const frames = hasDirectionalFrames ? directionalFrames : clip?.frames ?? NO_FRAMES;
 
-  React.useEffect(() => { setFrameIndex(0); }, [mode]);
+  React.useEffect(() => {
+    playback.current = { frame: 0, remainingMs: null };
+    setFrameIndex(0);
+  }, [mode]);
   React.useEffect(() => {
     if (paused) return;
     const definition = ANIMATIONS[mode];
-    let frame = 0;
+    const timing = playback.current;
 
     if (frames.length > 1) {
       let timer = 0;
+      let scheduledAt = 0;
+      let remainingMs = 0;
       const scheduleNextFrame = () => {
-        const delay = definition.frameDurationsMs?.[frame] ?? 1000 / Math.max(1, definition.framesPerSecond);
+        timing.frame %= frames.length;
+        remainingMs = timing.remainingMs ?? definition.frameDurationsMs?.[timing.frame] ?? 1000 / Math.max(1, definition.framesPerSecond);
+        scheduledAt = performance.now();
         timer = window.setTimeout(() => {
-          const next = frame + 1;
+          timer = 0;
+          timing.remainingMs = null;
+          const next = timing.frame + 1;
           if (next >= frames.length && !definition.loop) {
             setFrameIndex(frames.length - 1);
             onComplete();
             return;
           }
-          frame = next % frames.length;
-          setFrameIndex(frame);
+          timing.frame = next % frames.length;
+          setFrameIndex(timing.frame);
           scheduleNextFrame();
-        }, delay);
+        }, remainingMs / playbackRate);
       };
       scheduleNextFrame();
-      return () => window.clearTimeout(timer);
+      return () => {
+        if (!timer) return;
+        window.clearTimeout(timer);
+        // Store clip time, so pause, direction and speed changes preserve frame progress.
+        timing.remainingMs = Math.max(0, remainingMs - (performance.now() - scheduledAt) * playbackRate);
+      };
     }
 
     if (!definition.loop && definition.durationMs && definition.fallbackMotion !== 'wave') {
       const timer = window.setTimeout(onComplete, definition.durationMs);
       return () => window.clearTimeout(timer);
     }
-  }, [mode, paused, frames, onComplete]);
+  }, [mode, paused, playbackRate, frames, onComplete]);
 
   return { frameIndex, frames, hasDirectionalFrames };
 }
@@ -84,6 +100,7 @@ function Pet() {
   const [framePreloadComplete, setFramePreloadComplete] = React.useState(false);
   const [allowClickHeart, setAllowClickHeart] = React.useState(true);
   const [petScalePercent, setPetScalePercent] = React.useState(100);
+  const [roamingSpeed, setRoamingSpeed] = React.useState(DEFAULT_APP_SETTINGS.roamingSpeedDipPerSecond);
   const pointerStart = React.useRef<{ id: number; x: number; y: number; dragging: boolean } | null>(null);
 
   React.useEffect(() => {
@@ -102,11 +119,13 @@ function Pet() {
       if (active) {
         setAllowClickHeart(snapshot.settings.allowClickHeart);
         setPetScalePercent(snapshot.settings.petScalePercent);
+        setRoamingSpeed(snapshot.settings.roamingSpeedDipPerSecond);
       }
     });
     const unsubscribe = window.appBridge.onSnapshot((snapshot) => {
       setAllowClickHeart(snapshot.settings.allowClickHeart);
       setPetScalePercent(snapshot.settings.petScalePercent);
+      setRoamingSpeed(snapshot.settings.roamingSpeedDipPerSecond);
     });
     return () => { active = false; unsubscribe(); };
   }, []);
@@ -131,7 +150,11 @@ function Pet() {
     ? (state.beforePause === 'dragging' || state.beforePause === 'paused' ? 'idle' : state.beforePause)
     : state.mode === 'dragging' ? 'idle' : state.mode;
   const animationPaused = state.mode === 'paused' || state.mode === 'dragging';
-  const { frameIndex, frames, hasDirectionalFrames } = useAnimationFrame(currentAnimation, state.facing, animationPaused, framesByAnimation, handleAnimationComplete);
+  // Keep the default 4 fps gait; ease the increase above normal movement speed.
+  const movementSpeedRatio = roamingSpeed / DEFAULT_APP_SETTINGS.roamingSpeedDipPerSecond;
+  const walkPlaybackRate = movementSpeedRatio > 1 ? Math.sqrt(movementSpeedRatio) : movementSpeedRatio;
+  const playbackRate = currentAnimation === 'walk' ? walkPlaybackRate : 1;
+  const { frameIndex, frames, hasDirectionalFrames } = useAnimationFrame(currentAnimation, state.facing, animationPaused, playbackRate, framesByAnimation, handleAnimationComplete);
   const idleClip = framesByAnimation.idle;
   const idleDirectionalFrames = idleClip?.directionalFrames[state.facing] ?? NO_FRAMES;
   const idleFrames = idleDirectionalFrames.length ? idleDirectionalFrames : idleClip?.frames ?? NO_FRAMES;
@@ -199,6 +222,7 @@ function Pet() {
     data-idle-frames={idleFrames.length > 1 || !framePreloadComplete}
     data-facing={state.facing}
     data-directional-frames={usesDirectionalFrames}
+    style={{ '--walk-animation-duration': `${520 / walkPlaybackRate}ms` } as React.CSSProperties}
     onPointerDown={handlePointerDown}
     onPointerMove={handlePointerMove}
     onPointerUp={finishPointer}
