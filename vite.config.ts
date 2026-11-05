@@ -13,6 +13,7 @@ export default defineConfig({
       input: {
         pet: resolve(projectRoot, 'index.html'),
         settings: resolve(projectRoot, 'settings.html'),
+        bubble: resolve(projectRoot, 'bubble.html'),
       },
     },
   },

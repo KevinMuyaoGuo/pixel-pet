@@ -1,3 +1,5 @@
+import { SYSTEM_CLOCK, type ControllerClock } from './controller-clock.js';
+
 export type Facing = 'left' | 'right';
 export type WanderMode = 'idle' | 'walk';
 export type ActionMode = 'wave' | 'heart';
@@ -84,7 +86,7 @@ export class WanderController {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private config: WanderConfig = { ...WANDER_CONFIG };
 
-  constructor(private readonly screen: WanderScreen, private readonly callbacks: Callbacks) {}
+  constructor(private readonly screen: WanderScreen, private readonly callbacks: Callbacks, private readonly clock: ControllerClock = SYSTEM_CLOCK) {}
 
   get isEnabled() { return this.enabled; }
   get mode(): WanderMode { return this.phase === 'walk' ? 'walk' : 'idle'; }
@@ -204,6 +206,9 @@ export class WanderController {
       }
       this.clearTick();
     }
+    // Dragging cancels the one-shot action; it must not keep roaming suspended.
+    this.interactionActive = false;
+    this.interactionRemainingMs = 0;
     this.callbacks.onModeChange('idle');
   }
 
@@ -244,7 +249,7 @@ export class WanderController {
     return window && !window.isDestroyed() ? window : null;
   }
 
-  private now() { return performance.now(); }
+  private now() { return this.clock.now(); }
 
   private randomDuration(min: number, max: number) {
     return Math.round(min + Math.random() * (max - min));
@@ -294,14 +299,14 @@ export class WanderController {
     this.lastTick = this.now();
     const remaining = Math.max(1, this.phaseDeadline - this.lastTick);
     const delay = this.phase === 'walk' ? this.config.tickMs : remaining;
-    this.timer = setTimeout(() => {
+    this.timer = this.clock.setTimeout(() => {
       this.timer = undefined;
       this.tick();
     }, delay);
   }
 
   private clearTick() {
-    if (this.timer) clearTimeout(this.timer);
+    if (this.timer !== undefined) this.clock.clearTimeout(this.timer);
     this.timer = undefined;
   }
 

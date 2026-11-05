@@ -17,6 +17,26 @@
 - 本地设置与桌宠位置记忆
 - 通过安全 preload / IPC 在渲染进程与 Electron 主进程间通信
 
+## v0.6 — 互动桌宠
+
+- 点击人物时随机显示一条文字气泡，约 2.6 秒后消失。连续点击只替换当前气泡；气泡跟随桌宠、鼠标穿透、不抢键盘焦点。
+- 默认无互动 60 秒后进入自动休息并暂停漫步。点击、拖拽、主动开启漫步或关闭自动坐下会唤醒；暂停和一次性动作期间不会触发坐下。
+- **当前未提供 SIT 坐姿素材。** 逻辑 SIT 状态使用原有站立待机帧静止回退（待机素材也失败时使用 `pet.png`）。要显示真实坐姿，请按 [SIT 素材接口说明](public/animations/sit/README.md) 提供完整的 `sit_01.png`～`sit_04.png`。过渡播放一次后保持最后一帧；素材缺失或不完整时保持站立回退。
+- 拖拽优先于比心；一次性动作完成消息带有动作 ID，防止旧动作覆盖新状态。
+- 行走帧率随移动速度变化，高速段采用更平缓的加速幅度。
+
+「设置 → 行为」中包含以下持久化选项；显示比例位于「外观」：
+
+| 设置 | 默认值 | 范围 / 行为 |
+| --- | --- | --- |
+| 自动坐下 | 开启 | 无互动后暂停漫步并休息 |
+| 自动坐下等待时间 | 60 秒 | 15～600 秒 |
+| 互动气泡 | 开启 | 同时只显示一条，持续 2.6 秒 |
+| 显示比例 | 100% | 60%～150%，等比例缩放 |
+| 漫步速度 | 30 DIP/s | 10～120 DIP/s |
+
+设置 schema v2 会保留 v1 的已有偏好并补充新字段。应用重新启动时重置当前动作与空闲倒计时；是否自动漫步仍由已有的「启动应用后自动漫步」设置决定。
+
 ## 开发运行
 
 ```sh
@@ -35,11 +55,11 @@ npm run build:icons
 npm run package:mac
 ```
 
-应用和 DMG 输出在 `release/`。打包脚本会清理旧的中间 `.app` 和 DMG staging 目录，但保留已有 DMG。安装包文件名为 `PixelPet-1.0.0-arm64.dmg`。每次打包还会将 `Allow-PixelPet.command` 复制到 `release/`，方便随 DMG 一起发送。
+DMG 输出在 `release/`，应用输出在 `release/v0.6.0/mac-arm64/Pixel Pet.app`。旧版本目录和旧 DMG 均保留；重复构建同一版本时，会先为该版本的旧 DMG 添加时间戳归档。安装包文件名为 `PixelPet-0.6.0-arm64.dmg`。每次打包还会将 `Allow-PixelPet.command` 复制到 `release/`，方便随 DMG 一起发送。
 
 ## 安装和首次打开
 
-1. 从可信的发布来源下载 `PixelPet-1.0.0-arm64.dmg`，以及发布者提供的 `Allow-PixelPet.command`（如有）。
+1. 从可信的发布来源下载 `PixelPet-0.6.0-arm64.dmg`，以及发布者提供的 `Allow-PixelPet.command`（如有）。
 2. 先退出正在运行的 Pixel Pet。双击 DMG，将 `Pixel Pet.app` 拖到 `Applications` 快捷方式；更新时选择替换已安装的版本。
 3. 如果下载了配套脚本，安装完成后双击 `Allow-PixelPet.command`。终端会打开并显示确认弹窗；阅读说明，确认信任此版本后点击「继续」。
 4. 脚本提示处理成功后，点击「好」。脚本所在的独立终端窗口会自动关闭；没有其他终端窗口时，终端应用也会退出。之后从「应用程序」打开 Pixel Pet。脚本不会自动启动桌宠。
@@ -86,10 +106,16 @@ Apple 的说明：[在 Mac 上安全地打开 App](https://support.apple.com/en-
 | `electron/main.ts` | Tray、窗口、菜单、登录项、Dock 和 IPC |
 | `electron/settings-store.ts`、`electron/settings-types.ts` | 版本化配置与校验 |
 | `electron/wander-controller.ts` | 桌宠窗口移动与漫步控制 |
+| `electron/interaction-controller.ts`、`electron/pet-state.ts` | 空闲休息、气泡时序与共享动作状态 |
+| `src/bubble-main.tsx`、`bubble.html` | 独立的不抢焦点气泡视图 |
 | `src/main.tsx`、`src/animation-system.ts` | 桌宠渲染与逐帧动画 |
 | `src/settings-main.tsx`、`src/settings.css`、`settings.html` | 独立设置窗口 |
 | `public/` | 角色图片与动画素材 |
 | `assets/` | 应用图标与菜单栏模板图标 |
+
+## 验证
+
+运行 `npm test` 可执行控制器、配置和显示区域几何的确定性回归测试。
 
 ## 许可
 

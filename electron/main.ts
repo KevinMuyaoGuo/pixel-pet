@@ -6,6 +6,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WanderController, WANDER_CONFIG, type ActionMode, type Facing, type WanderMode, type WanderWindow } from './wander-controller.js';
 import { SettingsStore } from './settings-store.js';
 import { DEFAULT_APP_SETTINGS, validateSettingsPatch, type AppSettings, type AppSettingsPatch, type AppSnapshot } from './settings-types.js';
+import { InteractionController } from './interaction-controller.js';
+import type { PetMode, PetUiState } from './pet-state.js';
+import { bubbleBounds } from './window-geometry.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEV_URL = process.env.PIXEL_PET_DEV_URL ?? 'http://127.0.0.1:5173';
@@ -15,10 +18,11 @@ const DEFAULT_MARGIN = 24;
 if (process.platform === 'darwin') app.setPath('userData', join(app.getPath('appData'), 'pixel-pet'));
 const POSITION_FILE = () => join(app.getPath('userData'), 'pet-window.json');
 const SETTINGS_FILE = () => join(app.getPath('userData'), 'settings.json');
-type MainMode = WanderMode | ActionMode | 'dragging';
+type MainMode = PetMode;
 
 let petWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
+let bubbleWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let settingsStore: SettingsStore;
 let settings: AppSettings = { ...DEFAULT_APP_SETTINGS };
@@ -29,11 +33,15 @@ let facing: Facing = 'right';
 let dragOrigin: { pointerX: number; pointerY: number; windowX: number; windowY: number } | null = null;
 let savePositionTimer: ReturnType<typeof setTimeout> | undefined;
 let wanderController: WanderController | null = null;
+let interactionController: InteractionController | null = null;
+let actionSequence = 0;
+let activeActionId: number | null = null;
 let isQuitting = false;
 
 type ScreenPoint = { screenX: number; screenY: number };
 
 function isAppSender(event: IpcMainEvent | IpcMainInvokeEvent) {
+  if (event.sender !== petWindow?.webContents && event.sender !== settingsWindow?.webContents) return false;
   const url = event.senderFrame?.url;
   if (typeof url !== 'string' || event.senderFrame !== event.sender.mainFrame) return false;
   try {
@@ -55,13 +63,14 @@ function isScreenPoint(value: unknown): value is ScreenPoint {
     && Math.abs(point.screenX as number) < 1_000_000 && Math.abs(point.screenY as number) < 1_000_000;
 }
 
-function getUiState() {
+function getUiState(): PetUiState {
   return {
     paused,
     locked,
     roaming: wanderController?.isEnabled ?? false,
-    mode: animationMode,
+    mode: dragOrigin ? 'dragging' : interactionController?.isSitting ? 'sit' : animationMode,
     direction: facing,
+    actionId: activeActionId,
   };
 }
 
@@ -79,6 +88,7 @@ function getAppSnapshot(): AppSnapshot {
 }
 
 function sendUiState() {
+  interactionController?.setBlocked(paused || Boolean(dragOrigin) || activeActionId !== null || !petWindow?.isVisible());
   if (petWindow && !petWindow.isDestroyed()) petWindow.webContents.send('pet:ui-state', getUiState());
   refreshTrayMenu();
 }
@@ -92,7 +102,10 @@ function broadcastSnapshot() {
 }
 
 function startPetAction(mode: ActionMode) {
-  if (paused || !petWindow || petWindow.isDestroyed()) return;
+  if (paused || dragOrigin || !petWindow || petWindow.isDestroyed()) return;
+  interactionController?.activity();
+  if (activeActionId !== null && animationMode === mode) return;
+  activeActionId = ++actionSequence;
   wanderController?.beginAction(mode);
   animationMode = mode;
   sendUiState();
@@ -163,14 +176,24 @@ function setPetVisible(visible: boolean, persist = true) {
     petWindow?.show();
     if (settings.alwaysOnTop) petWindow?.setAlwaysOnTop(true, 'floating');
   } else {
+    activeActionId = null;
     if (wanderController?.isEnabled) wanderController.stop();
+    animationMode = 'idle';
     petWindow?.hide();
+    interactionController?.dismissBubble();
   }
+  interactionController?.activity();
+  sendUiState();
   if (persist && settings.showPet !== visible) settings = settingsStore.update({ showPet: visible });
   broadcastSnapshot();
 }
 
 function setRoaming(enabled: boolean) {
+  if (enabled && dragOrigin) return;
+  interactionController?.activity();
+  if (activeActionId !== null) wanderController?.finishAction();
+  activeActionId = null;
+  animationMode = 'idle';
   if (enabled) {
     if (settings.allowAutonomousRoaming && !locked && petWindow?.isVisible()) {
       if (savePositionTimer) clearTimeout(savePositionTimer);
@@ -180,13 +203,14 @@ function setRoaming(enabled: boolean) {
   } else {
     wanderController?.stop();
   }
+  animationMode = wanderController?.isEnabled ? wanderController.currentMode : 'idle';
   sendUiState();
   broadcastSnapshot();
 }
 
 function setPaused(value: boolean) {
   paused = value;
-  wanderController?.setPaused(value);
+  wanderController?.setPaused(value || Boolean(interactionController?.isSitting));
   sendUiState();
   broadcastSnapshot();
 }
@@ -199,6 +223,8 @@ function applyScaleChange(previousPercent: number) {
   const top = oldBounds.y + oldBounds.height - height;
   const target = clampToVisibleDisplay({ x: left, y: top, width, height });
   petWindow.setBounds({ x: Math.round(target.x), y: Math.round(target.y), width, height });
+  wanderController?.onDisplayConfigurationChanged();
+  updateBubblePosition();
   savePosition();
 }
 
@@ -209,6 +235,7 @@ function applySettings(previous: AppSettings) {
   applyScaleChange(previous.petScalePercent);
   wanderController?.configure(configuredWanderValues());
   if (!settings.allowAutonomousRoaming && wanderController?.isEnabled) wanderController.stop();
+  interactionController?.configure({ autoSit: settings.autoSit, idleSeconds: settings.idleSitSeconds, bubbles: settings.interactionBubbles });
 
   if (settings.showDockIcon !== previous.showDockIcon && process.platform === 'darwin' && app.dock) {
     if (settings.showDockIcon) app.dock.show();
@@ -367,10 +394,13 @@ function createContextMenu() {
       wanderController?.stop();
       dragOrigin = null;
       animationMode = 'idle';
+      activeActionId = null;
+      interactionController?.activity();
       const { width, height } = getPetDimensions();
       const position = getDefaultPosition(width, height);
       petWindow?.setPosition(position.x, position.y);
       savePosition();
+      sendUiState();
     } },
     { label: '打开设置', click: showSettingsWindow },
     { type: 'separator' },
@@ -403,6 +433,8 @@ function createPetWindow() {
   if (settings.alwaysOnTop) window.setAlwaysOnTop(true, 'floating');
   window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   window.on('move', scheduleSavePosition);
+  window.on('move', updateBubblePosition);
+  window.on('resize', updateBubblePosition);
   window.on('close', (event) => {
     if (isQuitting) return;
     event.preventDefault();
@@ -447,7 +479,57 @@ function handleDisplayConfigurationChanged() {
     savePosition();
   }
   sendUiState();
+  updateBubblePosition();
 }
+
+function updateBubblePosition() {
+  if (!petWindow || petWindow.isDestroyed() || !bubbleWindow || bubbleWindow.isDestroyed()) return;
+  const bounds = petWindow.getBounds();
+  const area = screen.getDisplayNearestPoint({ x: Math.round(bounds.x + bounds.width / 2), y: Math.round(bounds.y + bounds.height / 2) }).workArea;
+  bubbleWindow.setBounds(bubbleBounds(bounds, area));
+}
+
+function syncBubble() {
+  const state = interactionController?.bubble ?? { message: null };
+  if (!state.message || !petWindow?.isVisible()) {
+    bubbleWindow?.webContents.send('bubble:state', { message: null });
+    bubbleWindow?.hide();
+    return;
+  }
+  if (!bubbleWindow || bubbleWindow.isDestroyed()) {
+    const window = new BrowserWindow({
+      width: 200, height: 64, transparent: true, frame: false, focusable: false,
+      resizable: false, movable: false, hasShadow: false, show: false, skipTaskbar: true,
+      alwaysOnTop: settings.alwaysOnTop,
+      webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false },
+    });
+    bubbleWindow = window;
+    window.setIgnoreMouseEvents(true);
+    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    window.webContents.on('will-navigate', (event) => event.preventDefault());
+    window.on('closed', () => { if (bubbleWindow === window) bubbleWindow = null; });
+    window.once('ready-to-show', () => {
+      if (interactionController?.bubble.message && petWindow?.isVisible()) {
+        updateBubblePosition();
+        window.webContents.send('bubble:state', interactionController.bubble);
+        window.showInactive();
+      }
+    });
+    if (app.isPackaged) void window.loadFile(join(__dirname, '../dist/bubble.html'));
+    else void window.loadURL(`${DEV_URL}/bubble.html`);
+  } else {
+    updateBubblePosition();
+    bubbleWindow.setAlwaysOnTop(settings.alwaysOnTop, settings.alwaysOnTop ? 'floating' : 'normal');
+    bubbleWindow.webContents.send('bubble:state', state);
+    if (!bubbleWindow.webContents.isLoading()) bubbleWindow.showInactive();
+  }
+}
+
+ipcMain.handle('bubble:get-state', (event) => {
+  if (!bubbleWindow || event.sender !== bubbleWindow.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error('Untrusted bubble renderer');
+  return interactionController?.bubble ?? { message: null };
+});
 
 ipcMain.handle('pet:get-ui-state', (event) => {
   if (!isAppSender(event)) throw new Error('Untrusted renderer');
@@ -488,21 +570,32 @@ ipcMain.on('pet:action-start', (event, mode: unknown) => {
   if (mode === 'heart' && !settings.allowClickHeart) return;
   startPetAction(mode);
 });
-ipcMain.on('pet:action-finish', (event) => {
-  if (!isAppSender(event) || !petWindow || event.sender !== petWindow.webContents) return;
+ipcMain.on('pet:click', (event) => {
+  if (!isAppSender(event) || !petWindow || event.sender !== petWindow.webContents || paused || dragOrigin) return;
+  interactionController?.activity(true);
+  if (settings.allowClickHeart) startPetAction('heart');
+});
+ipcMain.on('pet:action-finish', (event, actionId: unknown) => {
+  if (!isAppSender(event) || !petWindow || event.sender !== petWindow.webContents || dragOrigin
+    || typeof actionId !== 'number' || !Number.isSafeInteger(actionId) || actionId !== activeActionId) return;
+  activeActionId = null;
   wanderController?.finishAction();
   if (!wanderController?.isEnabled) animationMode = 'idle';
   sendUiState();
 });
 ipcMain.on('pet:show-context-menu', (event) => {
   if (!isAppSender(event) || !petWindow || event.sender !== petWindow.webContents) return;
+  interactionController?.activity();
   createContextMenu().popup({ window: petWindow });
 });
 ipcMain.on('pet:begin-drag', (event, point: unknown) => {
   if (!isAppSender(event) || locked || !isScreenPoint(point) || !petWindow || event.sender !== petWindow.webContents) return;
-  wanderController?.onManualDragStarted();
   const [windowX, windowY] = petWindow.getPosition();
   dragOrigin = { pointerX: point.screenX, pointerY: point.screenY, windowX, windowY };
+  activeActionId = null;
+  interactionController?.activity();
+  interactionController?.dismissBubble();
+  wanderController?.onManualDragStarted();
   animationMode = 'dragging';
   sendUiState();
 });
@@ -520,6 +613,7 @@ ipcMain.on('pet:drag-to', (event, point: unknown) => {
 ipcMain.on('pet:end-drag', (event) => {
   if (!isAppSender(event) || !dragOrigin || !petWindow || event.sender !== petWindow.webContents) return;
   dragOrigin = null;
+  interactionController?.activity();
   wanderController?.onManualDragEnded();
   animationMode = wanderController?.isEnabled ? wanderController.currentMode : 'idle';
   sendUiState();
@@ -554,17 +648,28 @@ app.whenReady().then(() => {
   wanderController = new WanderController(screenPort, {
     getWindow: windowPort,
     isLocked: () => locked,
-    onModeChange: (mode: WanderMode | ActionMode) => { animationMode = mode; sendUiState(); },
+    onModeChange: (mode: WanderMode | ActionMode) => {
+      animationMode = mode;
+      if (mode === 'idle' || mode === 'walk') activeActionId = null;
+      sendUiState();
+    },
     onFacingChange: (direction: Facing) => { facing = direction; sendUiState(); },
     onEnabledChange: sendUiState,
     persistPosition: savePosition,
   });
   wanderController.configure(configuredWanderValues());
+  interactionController = new InteractionController(() => {
+    wanderController?.setPaused(paused || Boolean(interactionController?.isSitting));
+    sendUiState();
+    syncBubble();
+  });
+  interactionController.configure({ autoSit: settings.autoSit, idleSeconds: settings.idleSitSeconds, bubbles: settings.interactionBubbles });
   screen.on('display-added', handleDisplayConfigurationChanged);
   screen.on('display-removed', handleDisplayConfigurationChanged);
   screen.on('display-metrics-changed', handleDisplayConfigurationChanged);
   displayEventsRegistered = true;
   createPetWindow();
+  sendUiState();
   if (settings.showMenuBarIcon) createTray();
   if (settings.autoStartRoaming && settings.allowAutonomousRoaming && settings.showPet) setRoaming(true);
   broadcastSnapshot();
@@ -572,6 +677,11 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   isQuitting = true;
   wanderController?.dispose();
+  interactionController?.dispose();
+  petWindow?.removeListener('move', updateBubblePosition);
+  petWindow?.removeListener('resize', updateBubblePosition);
+  bubbleWindow?.destroy();
+  bubbleWindow = null;
   removeDisplayListeners();
   if (savePositionTimer) clearTimeout(savePositionTimer);
   savePositionTimer = undefined;

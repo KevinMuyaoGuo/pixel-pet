@@ -17,6 +17,26 @@
 - Persistent local settings and window position
 - Secure communication between the Electron main process and renderer through preload and IPC
 
+## v0.6 — Interactive Companion
+
+- Click to show one random text bubble for 2.6 seconds. Repeated clicks replace the bubble; it follows the pet, ignores mouse input, and does not take keyboard focus.
+- After 60 seconds without interaction, auto-rest suspends roaming. Clicking, dragging, starting roaming, or disabling auto-sit wakes the pet. Pause and one-shot actions defer the inactivity deadline.
+- **SIT artwork is not included yet.** The logical SIT state holds the original standing idle frame as a static fallback (`pet.png` if idle also fails). To display a real sitting pose, provide all four `sit_01.png`–`sit_04.png` frames as described in the [SIT artwork interface](public/animations/sit/README.md). The transition plays once and holds its final frame. Partial/missing frames also use the static fallback.
+- Dragging takes priority over HEART. One-shot completion messages carry an action ID so an interrupted action cannot overwrite a newer state.
+- Walking cadence follows movement speed with a gentler increase at higher speeds.
+
+Settings → Behavior includes the interaction controls; character scale is under Appearance:
+
+| Setting | Default | Range / behavior |
+| --- | --- | --- |
+| Auto-sit | On | Suspend roaming after inactivity |
+| Auto-sit delay | 60 seconds | 15–600 seconds |
+| Interaction bubbles | On | One bubble at a time, 2.6 seconds |
+| Character scale | 100% | 60%–150%, proportional |
+| Roaming speed | 30 DIP/s | 10–120 DIP/s |
+
+Settings schema v2 automatically fills in new fields while preserving v1 preferences. Runtime actions and the inactivity countdown start fresh on launch; the existing “start roaming on launch” setting controls startup roaming.
+
 ## Run in Development
 
 ```sh
@@ -35,11 +55,11 @@ npm run build:icons
 npm run package:mac
 ```
 
-The app and DMG are written to `release/`. The packaging script clears the old intermediate `.app` and DMG staging directory, but preserves existing DMG files. The installer is named `PixelPet-1.0.0-arm64.dmg`. Each build also copies `Allow-PixelPet.command` to `release/` so it can be distributed alongside the DMG.
+The DMG is written to `release/`; the app is written to `release/v0.6.0/mac-arm64/Pixel Pet.app`. Older version directories and DMGs are preserved. Rebuilding the same version archives its previous DMG with a timestamp. The installer is named `PixelPet-0.6.0-arm64.dmg`. Each build also copies `Allow-PixelPet.command` to `release/` so it can be distributed alongside the DMG.
 
 ## Install and Open for the First Time
 
-1. Download `PixelPet-1.0.0-arm64.dmg` and, if provided, `Allow-PixelPet.command` from the trusted release source.
+1. Download `PixelPet-0.6.0-arm64.dmg` and, if provided, `Allow-PixelPet.command` from the trusted release source.
 2. Quit any running copy of Pixel Pet. Open the DMG and drag `Pixel Pet.app` onto the **Applications** shortcut. When updating, replace the installed copy.
 3. If you downloaded the companion script, double-click `Allow-PixelPet.command` after installing the app. Terminal opens and a confirmation dialog appears. Review the message and click **Continue** only if you trust this release.
 4. When the script reports success, click **OK**. Its standalone Terminal window closes automatically; Terminal also quits if no other windows remain. Then open Pixel Pet from **Applications**. The script does not launch the app for you.
@@ -86,10 +106,16 @@ The main process is the only writer of configuration. Renderers access limited, 
 | `electron/main.ts` | Tray, windows, menus, login items, Dock, and IPC |
 | `electron/settings-store.ts`, `electron/settings-types.ts` | Versioned settings and validation |
 | `electron/wander-controller.ts` | Pet window movement and roaming control |
+| `electron/interaction-controller.ts`, `electron/pet-state.ts` | Inactivity, bubble timing, and shared action state |
+| `src/bubble-main.tsx`, `bubble.html` | Independent nonfocusable bubble view |
 | `src/main.tsx`, `src/animation-system.ts` | Pet rendering and frame-based animation |
 | `src/settings-main.tsx`, `src/settings.css`, `settings.html` | Standalone settings window |
 | `public/` | Character image and animation assets |
 | `assets/` | App and menu bar template icons |
+
+## Verification
+
+Run `npm test` for deterministic controller, settings, and display geometry regressions.
 
 ## License
 
