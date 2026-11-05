@@ -7,7 +7,7 @@ body { -webkit-app-region: no-drag; }
 .pet-window[data-visual-mode="idle"][data-idle-frames="false"] .pet-stage { animation: float 3.2s ease-in-out infinite; }
 .pet-window[data-hovered="true"] .pet-art { filter: brightness(1.04); }
 .pet-window[data-visual-mode="wave"][data-has-frames="false"] .pet-art { animation: wave-gesture 680ms cubic-bezier(.2,.8,.3,1) both; }
-.pet-window[data-visual-mode="walk"][data-has-frames="false"] .pet-stage { animation: walk-in-place 520ms ease-in-out infinite; }
+.pet-window[data-visual-mode="walk"][data-has-frames="false"] .pet-stage { animation: walk-in-place var(--walk-animation-duration, 520ms) ease-in-out infinite; }
 .pet-window[data-visual-mode="dragging"] .pet-art { transform: scaleX(var(--direction-scale)) scale(1.02); }
 .pet-window[data-mode="paused"] .pet-stage,
 .pet-window[data-mode="paused"] .pet-art { animation-play-state: paused !important; }
