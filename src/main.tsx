@@ -1,28 +1,24 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { DEFAULT_APP_SETTINGS } from '../electron/settings-types';
+import { animationStateFor, type PetUiState, type PetAnimationState } from '../electron/pet-state';
 import { ANIMATIONS, NO_FRAMES, preloadAnimationFrames, STATIC_PET_IMAGE, type AnimationName, type Facing, type LoadedAnimation } from './animation-system';
 import './style.css';
 
 const DISPLAY_HEIGHT = 180;
 type PetMode = AnimationName | 'dragging' | 'paused';
-type PetState = { mode: PetMode; beforePause: PetMode; hovered: boolean; locked: boolean; roaming: boolean; facing: Facing };
+type PetState = { mode: PetMode; beforePause: PetMode; hovered: boolean; locked: boolean; roaming: boolean; facing: Facing; actionId: number | null; animationState: PetAnimationState };
 type PetAction =
-  | { type: 'set-mode'; mode: PetMode }
-  | { type: 'sync-ui'; uiState: { paused: boolean; locked: boolean; roaming: boolean; mode: PetMode; direction: Facing } }
+  | { type: 'sync-ui'; uiState: PetUiState }
   | { type: 'set-hovered'; hovered: boolean }
   | { type: 'set-locked'; locked: boolean };
 
-const initialState: PetState = { mode: 'idle', beforePause: 'idle', hovered: false, locked: false, roaming: false, facing: 'right' };
+const initialState: PetState = { mode: 'idle', beforePause: 'idle', hovered: false, locked: false, roaming: false, facing: 'right', actionId: null, animationState: 'IDLE' };
 
 function petReducer(state: PetState, action: PetAction): PetState {
   switch (action.type) {
-    case 'set-mode':
-      return state.mode === 'paused'
-        ? { ...state, beforePause: action.mode }
-        : { ...state, mode: action.mode, beforePause: action.mode };
     case 'sync-ui': {
-      const mode = action.uiState.paused ? 'paused' : action.uiState.mode;
+      const mode = action.uiState.mode === 'dragging' ? 'dragging' : action.uiState.paused ? 'paused' : action.uiState.mode;
       return {
         ...state,
         mode,
@@ -30,6 +26,8 @@ function petReducer(state: PetState, action: PetAction): PetState {
         locked: action.uiState.locked,
         roaming: action.uiState.roaming,
         facing: action.uiState.direction,
+        actionId: action.uiState.actionId,
+        animationState: animationStateFor(action.uiState),
       };
     }
     case 'set-hovered': return { ...state, hovered: action.hovered };
@@ -37,7 +35,7 @@ function petReducer(state: PetState, action: PetAction): PetState {
   }
 }
 
-function useAnimationFrame(mode: AnimationName, facing: Facing, paused: boolean, playbackRate: number, framesByAnimation: Partial<Record<AnimationName, LoadedAnimation>>, onComplete: () => void) {
+function useAnimationFrame(mode: AnimationName, facing: Facing, paused: boolean, playbackRate: number, actionId: number | null, framesByAnimation: Partial<Record<AnimationName, LoadedAnimation>>, onComplete: () => void) {
   const [frameIndex, setFrameIndex] = React.useState(0);
   const playback = React.useRef<{ frame: number; remainingMs: number | null }>({ frame: 0, remainingMs: null });
   const clip = framesByAnimation[mode];
@@ -48,7 +46,7 @@ function useAnimationFrame(mode: AnimationName, facing: Facing, paused: boolean,
   React.useEffect(() => {
     playback.current = { frame: 0, remainingMs: null };
     setFrameIndex(0);
-  }, [mode]);
+  }, [mode, actionId]);
   React.useEffect(() => {
     if (paused) return;
     const definition = ANIMATIONS[mode];
@@ -68,7 +66,7 @@ function useAnimationFrame(mode: AnimationName, facing: Facing, paused: boolean,
           const next = timing.frame + 1;
           if (next >= frames.length && !definition.loop) {
             setFrameIndex(frames.length - 1);
-            onComplete();
+            if (!definition.holdLastFrame) onComplete();
             return;
           }
           timing.frame = next % frames.length;
@@ -89,7 +87,7 @@ function useAnimationFrame(mode: AnimationName, facing: Facing, paused: boolean,
       const timer = window.setTimeout(onComplete, definition.durationMs);
       return () => window.clearTimeout(timer);
     }
-  }, [mode, paused, playbackRate, frames, onComplete]);
+  }, [mode, paused, playbackRate, actionId, frames, onComplete]);
 
   return { frameIndex, frames, hasDirectionalFrames };
 }
@@ -98,7 +96,6 @@ function Pet() {
   const [state, dispatch] = React.useReducer(petReducer, initialState);
   const [framesByAnimation, setFramesByAnimation] = React.useState<Partial<Record<AnimationName, LoadedAnimation>>>({});
   const [framePreloadComplete, setFramePreloadComplete] = React.useState(false);
-  const [allowClickHeart, setAllowClickHeart] = React.useState(true);
   const [petScalePercent, setPetScalePercent] = React.useState(100);
   const [roamingSpeed, setRoamingSpeed] = React.useState(DEFAULT_APP_SETTINGS.roamingSpeedDipPerSecond);
   const pointerStart = React.useRef<{ id: number; x: number; y: number; dragging: boolean } | null>(null);
@@ -117,13 +114,11 @@ function Pet() {
     let active = true;
     void window.appBridge.getSnapshot().then((snapshot) => {
       if (active) {
-        setAllowClickHeart(snapshot.settings.allowClickHeart);
         setPetScalePercent(snapshot.settings.petScalePercent);
         setRoamingSpeed(snapshot.settings.roamingSpeedDipPerSecond);
       }
     });
     const unsubscribe = window.appBridge.onSnapshot((snapshot) => {
-      setAllowClickHeart(snapshot.settings.allowClickHeart);
       setPetScalePercent(snapshot.settings.petScalePercent);
       setRoamingSpeed(snapshot.settings.roamingSpeedDipPerSecond);
     });
@@ -143,9 +138,8 @@ function Pet() {
   }, []);
 
   const handleAnimationComplete = React.useCallback(() => {
-    dispatch({ type: 'set-mode', mode: 'idle' });
-    window.petBridge.finishAction();
-  }, []);
+    if (state.actionId !== null) window.petBridge.finishAction(state.actionId);
+  }, [state.actionId]);
   const currentAnimation: AnimationName = state.mode === 'paused'
     ? (state.beforePause === 'dragging' || state.beforePause === 'paused' ? 'idle' : state.beforePause)
     : state.mode === 'dragging' ? 'idle' : state.mode;
@@ -154,11 +148,11 @@ function Pet() {
   const movementSpeedRatio = roamingSpeed / DEFAULT_APP_SETTINGS.roamingSpeedDipPerSecond;
   const walkPlaybackRate = movementSpeedRatio > 1 ? Math.sqrt(movementSpeedRatio) : movementSpeedRatio;
   const playbackRate = currentAnimation === 'walk' ? walkPlaybackRate : 1;
-  const { frameIndex, frames, hasDirectionalFrames } = useAnimationFrame(currentAnimation, state.facing, animationPaused, playbackRate, framesByAnimation, handleAnimationComplete);
+  const { frameIndex, frames, hasDirectionalFrames } = useAnimationFrame(currentAnimation, state.facing, animationPaused, playbackRate, state.actionId, framesByAnimation, handleAnimationComplete);
   const idleClip = framesByAnimation.idle;
   const idleDirectionalFrames = idleClip?.directionalFrames[state.facing] ?? NO_FRAMES;
   const idleFrames = idleDirectionalFrames.length ? idleDirectionalFrames : idleClip?.frames ?? NO_FRAMES;
-  const availableFrames = frames.length > 1 ? frames : currentAnimation === 'idle' ? frames : [];
+  const availableFrames = frames.length > 1 ? frames : currentAnimation === 'idle' || currentAnimation === 'sit' ? frames : [];
   const fallbackName = ANIMATIONS[currentAnimation].fallback;
   const fallbackClip = fallbackName === 'static' ? undefined : framesByAnimation[fallbackName];
   const fallbackDirectionalFrames = fallbackClip?.directionalFrames[state.facing] ?? NO_FRAMES;
@@ -178,11 +172,12 @@ function Pet() {
     : state.mode === 'dragging' ? '正在拖动'
       : state.mode === 'wave' ? '挥手中'
         : state.mode === 'heart' ? '比心中'
+        : state.mode === 'sit' ? hasAnimationFrames ? '坐下休息' : '休息中，坐姿素材缺失，静止站立回退'
         : state.mode === 'walk' ? '行走中'
           : state.mode === 'idle' ? '待机' : state.mode;
 
   const handlePointerDown = (event: React.PointerEvent<HTMLElement>) => {
-    if (event.button !== 0 || state.locked) return;
+    if (event.button !== 0) return;
     pointerStart.current = { id: event.pointerId, x: event.screenX, y: event.screenY, dragging: false };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -193,21 +188,19 @@ function Pet() {
     if (!start.dragging && Math.hypot(event.screenX - start.x, event.screenY - start.y) >= 4) {
       start.dragging = true;
       window.petBridge.beginDrag({ screenX: start.x, screenY: start.y });
-      dispatch({ type: 'set-mode', mode: 'dragging' });
     }
     if (start.dragging) window.petBridge.dragTo({ screenX: event.screenX, screenY: event.screenY });
   };
 
-  const finishPointer = (event: React.PointerEvent<HTMLElement>) => {
+  const finishPointer = (event: React.PointerEvent<HTMLElement>, cancelled = false) => {
     const start = pointerStart.current;
     if (!start || start.id !== event.pointerId) return;
     pointerStart.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     if (start.dragging) {
       window.petBridge.endDrag();
-      dispatch({ type: 'set-mode', mode: 'idle' });
-    } else if (!state.locked && state.mode !== 'paused' && allowClickHeart) {
-      window.petBridge.startAction('heart');
-      dispatch({ type: 'set-mode', mode: 'heart' });
+    } else if (!cancelled && state.mode !== 'paused') {
+      window.petBridge.click();
     }
   };
 
@@ -215,6 +208,7 @@ function Pet() {
     className="pet-window"
     aria-label={`桌面宠物，${statusText}${state.roaming ? '，自主漫步已开启' : ''}${state.hovered ? '，鼠标悬停' : ''}${state.locked ? '，位置已锁定' : ''}`}
     data-mode={state.mode}
+    data-animation-state={state.animationState}
     data-visual-mode={visualMode}
     data-hovered={state.hovered}
     data-locked={state.locked}
@@ -225,8 +219,9 @@ function Pet() {
     style={{ '--walk-animation-duration': `${520 / walkPlaybackRate}ms` } as React.CSSProperties}
     onPointerDown={handlePointerDown}
     onPointerMove={handlePointerMove}
-    onPointerUp={finishPointer}
-    onPointerCancel={finishPointer}
+    onPointerUp={(event) => finishPointer(event)}
+    onPointerCancel={(event) => finishPointer(event, true)}
+    onLostPointerCapture={(event) => finishPointer(event, true)}
     onPointerEnter={() => dispatch({ type: 'set-hovered', hovered: true })}
     onPointerLeave={() => dispatch({ type: 'set-hovered', hovered: false })}
     onContextMenu={(event) => { event.preventDefault(); window.petBridge.showContextMenu(); }}

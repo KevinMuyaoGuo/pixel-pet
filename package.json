@@ -1,6 +1,6 @@
 {
   "name": "pixel-pet",
-  "version": "1.0.0",
+  "version": "0.6.0",
   "productName": "Pixel Pet",
   "description": "macOS pixel desktop companion",
   "author": "Kevin Muyao Guo",
@@ -13,7 +13,9 @@
     "build": "tsc -b && vite build && tsc -p electron/tsconfig.json",
     "start": "electron .",
     "build:icons": "swift scripts/generate-icons.swift",
-    "package:mac": "npm run build && rm -rf \"release/mac-arm64/Pixel Pet.app\" release/dmg-staging && unset CSC_LINK CSC_NAME CSC_KEY_PASSWORD CSC_INSTALLER_LINK CSC_INSTALLER_NAME CSC_INSTALLER_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER && CSC_IDENTITY_AUTO_DISCOVERY=false ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ electron-builder --mac dir --arm64 && mkdir -p release/dmg-staging && ditto \"release/mac-arm64/Pixel Pet.app\" \"release/dmg-staging/Pixel Pet.app\" && ln -sfn /Applications release/dmg-staging/Applications && hdiutil create -volname \"PixelPet\" -srcfolder release/dmg-staging -ov -format UDZO \"release/PixelPet-1.0.0-arm64.dmg\" && cp scripts/Allow-PixelPet.command release/Allow-PixelPet.command && chmod +x release/Allow-PixelPet.command"
+    "package:mac": "npm run build && node scripts/package-mac.mjs",
+    "test": "tsc -p electron/tsconfig.json && node --test tests/*.test.mjs",
+    "test:electron": "npm run build && PIXEL_PET_DEV_URL=http://127.0.0.1:5178 electron tests/electron-smoke.cjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",

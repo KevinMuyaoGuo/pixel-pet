@@ -1,31 +1,25 @@
 import type { AppSettingsPatch, AppSnapshot } from '../electron/settings-types.js';
+import type { PetUiState, BubbleState } from '../electron/pet-state.js';
 
 export {};
 
 declare global {
   interface Window {
     petBridge: {
-      getUiState: () => Promise<{
-        paused: boolean;
-        locked: boolean;
-        roaming: boolean;
-        mode: 'idle' | 'walk' | 'wave' | 'heart' | 'dragging';
-        direction: 'left' | 'right';
-      }>;
+      getUiState: () => Promise<PetUiState>;
       setRoaming: (enabled: boolean) => void;
       startAction: (mode: 'wave' | 'heart') => void;
-      finishAction: () => void;
+      click: () => void;
+      finishAction: (actionId: number) => void;
       beginDrag: (point: { screenX: number; screenY: number }) => void;
       dragTo: (point: { screenX: number; screenY: number }) => void;
       endDrag: () => void;
       showContextMenu: () => void;
-      onUiState: (callback: (state: {
-        paused: boolean;
-        locked: boolean;
-        roaming: boolean;
-        mode: 'idle' | 'walk' | 'wave' | 'heart' | 'dragging';
-        direction: 'left' | 'right';
-      }) => void) => () => void;
+      onUiState: (callback: (state: PetUiState) => void) => () => void;
+    };
+    bubbleBridge: {
+      getState: () => Promise<BubbleState>;
+      onState: (callback: (state: BubbleState) => void) => () => void;
     };
     appBridge: {
       getSnapshot: () => Promise<AppSnapshot>;

@@ -1,4 +1,4 @@
-export type AnimationName = 'idle' | 'wave' | 'heart' | 'walk' | 'sleeping' | 'thinking' | 'happy';
+export type AnimationName = 'idle' | 'wave' | 'heart' | 'walk' | 'sit' | 'sleeping' | 'thinking' | 'happy';
 export type Facing = 'left' | 'right';
 
 export type AnimationDefinition = {
@@ -11,6 +11,8 @@ export type AnimationDefinition = {
   durationMs?: number;
   fallback: AnimationName | 'static';
   fallbackMotion?: 'wave' | 'walk';
+  holdLastFrame?: boolean;
+  requireAllFrames?: boolean;
 };
 
 const asset = (path: string) => `${import.meta.env.BASE_URL}${path}`;
@@ -43,6 +45,14 @@ export const ANIMATIONS: Record<AnimationName, AnimationDefinition> = {
     fallback: 'idle',
     fallbackMotion: 'walk',
   },
+  sit: {
+    frames: [1, 2, 3, 4].map((frame) => asset(`animations/sit/sit_${String(frame).padStart(2, '0')}.png`)),
+    framesPerSecond: 4,
+    loop: false,
+    holdLastFrame: true,
+    requireAllFrames: true,
+    fallback: 'idle',
+  },
   sleeping: { frames: [], framesPerSecond: 2, loop: true, fallback: 'idle' },
   thinking: { frames: [], framesPerSecond: 4, loop: true, fallback: 'idle' },
   happy: { frames: [], framesPerSecond: 8, loop: false, durationMs: 700, fallback: 'idle' },
@@ -67,7 +77,8 @@ export async function preloadAnimationFrames() {
       preloadSources(definition.directionalFrames?.left ?? []),
       preloadSources(definition.directionalFrames?.right ?? []),
     ]);
-    return [name, { frames, directionalFrames: { left, right } }] as const;
+    const completeFrames = definition.requireAllFrames && frames.length !== definition.frames.length ? [] : frames;
+    return [name, { frames: completeFrames, directionalFrames: { left, right } }] as const;
   }));
   return Object.fromEntries(entries) as Partial<Record<AnimationName, LoadedAnimation>>;
 }

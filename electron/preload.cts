@@ -1,20 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { AppSettingsPatch, AppSnapshot } from './settings-types.js';
+import type { PetUiState as UiState, BubbleState } from './pet-state.js';
 
-type UiState = {
-  paused: boolean;
-  locked: boolean;
-  roaming: boolean;
-  mode: 'idle' | 'walk' | 'wave' | 'heart' | 'dragging';
-  direction: 'left' | 'right';
-};
 type ScreenPoint = { screenX: number; screenY: number };
 
 contextBridge.exposeInMainWorld('petBridge', {
   getUiState: (): Promise<UiState> => ipcRenderer.invoke('pet:get-ui-state'),
   setRoaming: (enabled: boolean) => ipcRenderer.send('pet:set-roaming', enabled),
   startAction: (mode: 'wave' | 'heart') => ipcRenderer.send('pet:action-start', mode),
-  finishAction: () => ipcRenderer.send('pet:action-finish'),
+  click: () => ipcRenderer.send('pet:click'),
+  finishAction: (actionId: number) => ipcRenderer.send('pet:action-finish', actionId),
   beginDrag: (point: ScreenPoint) => ipcRenderer.send('pet:begin-drag', point),
   dragTo: (point: ScreenPoint) => ipcRenderer.send('pet:drag-to', point),
   endDrag: () => ipcRenderer.send('pet:end-drag'),
@@ -23,6 +18,15 @@ contextBridge.exposeInMainWorld('petBridge', {
     const listener = (_event: Electron.IpcRendererEvent, state: UiState) => callback(state);
     ipcRenderer.on('pet:ui-state', listener);
     return () => ipcRenderer.removeListener('pet:ui-state', listener);
+  },
+});
+
+contextBridge.exposeInMainWorld('bubbleBridge', {
+  getState: (): Promise<BubbleState> => ipcRenderer.invoke('bubble:get-state'),
+  onState: (callback: (state: BubbleState) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: BubbleState) => callback(state);
+    ipcRenderer.on('bubble:state', listener);
+    return () => ipcRenderer.removeListener('bubble:state', listener);
   },
 });
 

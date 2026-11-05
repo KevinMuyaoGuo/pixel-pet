@@ -135,7 +135,7 @@ function SettingsApp() {
         <section className="setting-card">
           <div className="card-heading"><h2>自主漫步</h2><p>设置移动速度和走动、停留节奏。</p></div>
           <ToggleRow title="允许自主漫步" detail="关闭后，菜单和设置中的漫步开关都不可用。" checked={settings.allowAutonomousRoaming} onChange={toggle('allowAutonomousRoaming')} />
-          <ToggleRow title="当前正在漫步" detail="立即开启或停止漫步；位置锁定或隐藏桌宠时无法启动。" checked={runtime.roaming} disabled={!settings.allowAutonomousRoaming || lockedUnavailable(runtime)} onChange={(value) => window.appBridge.setRoaming(value)} />
+          <ToggleRow title="自主漫步已开启" detail="休息或坐下时暂不移动；位置锁定或隐藏桌宠时无法启动。" checked={runtime.roaming} disabled={!settings.allowAutonomousRoaming || lockedUnavailable(runtime)} onChange={(value) => window.appBridge.setRoaming(value)} />
           <SliderRow title="漫步速度" detail="每秒移动的屏幕逻辑像素（DIP）。" min={10} max={120} value={settings.roamingSpeedDipPerSecond} suffix=" DIP/s" onChange={(value) => void save({ roamingSpeedDipPerSecond: value })} />
         </section>
         <section className="setting-card">
@@ -146,6 +146,9 @@ function SettingsApp() {
         <section className="setting-card">
           <div className="card-heading"><h2>互动</h2><p>选择角色对鼠标操作的回应。</p></div>
           <ToggleRow title="点击人物触发比心" detail="关闭后，点击不播放比心动画，拖动功能不受影响。" checked={settings.allowClickHeart} onChange={toggle('allowClickHeart')} />
+          <ToggleRow title="互动文字气泡" detail="点击显示一条短句，约 2.6 秒后消失；气泡不会抢焦点。" checked={settings.interactionBubbles} onChange={toggle('interactionBubbles')} />
+          <ToggleRow title="空闲后自动坐下" detail="暂停漫步并保持休息；缺少坐姿素材时静止站立。点击或拖动唤醒。" checked={settings.autoSit} onChange={toggle('autoSit')} />
+          <SliderRow title="自动坐下等待时间" detail="距离上次互动的秒数，默认 60 秒。" min={15} max={600} value={settings.idleSitSeconds} suffix=" 秒" onChange={(value) => void save({ idleSitSeconds: value })} />
         </section>
       </>}
 

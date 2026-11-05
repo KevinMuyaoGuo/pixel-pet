@@ -1,4 +1,4 @@
-export const SETTINGS_SCHEMA_VERSION = 1;
+export const SETTINGS_SCHEMA_VERSION = 2;
 
 export type AppSettings = {
   schemaVersion: number;
@@ -16,6 +16,9 @@ export type AppSettings = {
   maxWalkSeconds: number;
   minRestSeconds: number;
   maxRestSeconds: number;
+  autoSit: boolean;
+  idleSitSeconds: number;
+  interactionBubbles: boolean;
 };
 
 export type AppSettingsPatch = Partial<Omit<AppSettings, 'schemaVersion'>>;
@@ -47,11 +50,15 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   maxWalkSeconds: 8,
   minRestSeconds: 5,
   maxRestSeconds: 12,
+  autoSit: true,
+  idleSitSeconds: 60,
+  interactionBubbles: true,
 };
 
 const BOOLEAN_KEYS = [
   'showPet', 'alwaysOnTop', 'launchAtLogin', 'autoStartRoaming',
   'showMenuBarIcon', 'showDockIcon', 'allowClickHeart', 'allowAutonomousRoaming',
+  'autoSit', 'interactionBubbles',
 ] as const;
 const NUMBER_RANGES = {
   petScalePercent: [60, 150],
@@ -60,6 +67,7 @@ const NUMBER_RANGES = {
   maxWalkSeconds: [1, 60],
   minRestSeconds: [1, 120],
   maxRestSeconds: [1, 120],
+  idleSitSeconds: [15, 600],
 } as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
