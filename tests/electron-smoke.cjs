@@ -42,7 +42,27 @@ const watchdog = setTimeout(() => { console.error('SMOKE TIMEOUT'); app.exit(1);
   await until(async () => await js('Boolean(window.petBridge && document.querySelector(".pet-art"))'));
   await until(async () => await js('document.querySelector(".pet-art").complete'));
   const ui = () => js('window.petBridge.getUiState()');
+  const visibleArt = () => js(`(async () => {
+    const image = document.querySelector('.pet-art');
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+    const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let top = canvas.height, bottom = 0;
+    for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+      if (pixels[(y * canvas.width + x) * 4 + 3] >= 128) { top = Math.min(top, y); bottom = Math.max(bottom, y + 1); }
+    }
+    const bounds = image.getBoundingClientRect();
+    return { height: (bottom - top) / canvas.height * bounds.height, bottom: bounds.top + bottom / canvas.height * bounds.height };
+  })()`);
   const snap = () => js('window.appBridge.getSnapshot()');
+  const clickResponse = async index => {
+    const random = Math.random;
+    Math.random = () => (index + 0.5) / 5;
+    try { await js('window.petBridge.click()'); await ui(); }
+    finally { Math.random = random; }
+  };
   const menu = label => { const template = [...menus].reverse().find(items => items.some(i => i.label === label)); assert.ok(template, `menu ${label}`); template.find(i => i.label === label).click(); };
   assert.equal(pet.webContents.getLastWebPreferences().contextIsolation, true);
   assert.equal(pet.webContents.getLastWebPreferences().nodeIntegration, false);
@@ -59,7 +79,7 @@ const watchdog = setTimeout(() => { console.error('SMOKE TIMEOUT'); app.exit(1);
     assert.deepEqual(pet.getPosition(), [saved.x, saved.y]);
     results.push('restart restores settings and saved visible position; runtime starts idle');
   } else {
-    await js('window.petBridge.click()');
+    await clickResponse(4);
     await until(async () => (await ui()).mode === 'heart');
     const token = (await ui()).actionId;
     for (let i = 0; i < 30; i++) await js('window.petBridge.click()');
@@ -70,9 +90,20 @@ const watchdog = setTimeout(() => { console.error('SMOKE TIMEOUT'); app.exit(1);
     assert.equal(bubble.isFocused(), false);
     assert.equal(BrowserWindow.getAllWindows().length, 2);
     await until(async () => await bubble.webContents.executeJavaScript('document.querySelectorAll(".speech-bubble").length === 1'));
+    assert.equal(await bubble.webContents.executeJavaScript('document.querySelector(".speech-bubble").textContent'), '爱你哦~');
     await until(async () => (await ui()).mode === 'idle');
     await until(() => !bubble.isVisible());
     results.push('30 rapid native IPC clicks: one HEART, one nonfocusable bubble; both finish');
+
+    for (const [index, phrase] of [[1, '在干嘛？'], [2, '休息一下吧~'], [3, '今天也要想我哦~']]) {
+      await clickResponse(index);
+      await until(async () => await bubble.webContents.executeJavaScript(`document.querySelector('.speech-bubble')?.textContent === ${JSON.stringify(phrase)}`));
+      assert.equal((await ui()).mode, 'idle');
+      assert.equal((await ui()).actionId, null);
+    }
+    await js('window.petBridge.showContextMenu()');
+    assert.equal(menus.at(-1).some(item => item.label === '挥手'), false);
+    results.push('all three unassigned phrases leave the pet idle; original right-click menu has no Wave item');
 
     const bubbleArea = screen.getDisplayMatching(pet.getBounds()).workArea;
     const originalPosition = pet.getPosition();
@@ -124,7 +155,35 @@ const watchdog = setTimeout(() => { console.error('SMOKE TIMEOUT'); app.exit(1);
     assert.notDeepEqual(pet.getPosition(), frozen);
     results.push('native roaming moves; tray pause freezes frames and coordinates; resume works');
 
-    await js('window.petBridge.click()'); await until(async () => (await ui()).mode === 'heart');
+    await js('window.petBridge.showContextMenu()');
+    await js(`window.waveFrames = []; window.waveObserver = new MutationObserver(() => {
+      const src = document.querySelector('.pet-art').src;
+      if (src.includes('/wave/')) window.waveFrames.push(src.split('/').pop());
+    }); window.waveObserver.observe(document.querySelector('.pet-art'), { attributes: true, attributeFilter: ['src'] });`);
+    await clickResponse(0);
+    await until(async () => (await ui()).mode === 'wave');
+    await until(async () => await bubble.webContents.executeJavaScript('document.querySelector(".speech-bubble")?.textContent === "你好呀！"'));
+    const wavePosition = pet.getPosition();
+    const waveArt = await visibleArt();
+    await until(async () => (await js('document.querySelector(".pet-art").src')).endsWith('/wave_02.png'));
+    menu('暂停动画');
+    await until(async () => await js('document.querySelector("main").dataset.mode === "paused"'));
+    const pausedWave = await js('document.querySelector(".pet-art").src');
+    await wait(400);
+    assert.equal(await js('document.querySelector(".pet-art").src'), pausedWave);
+    assert.deepEqual(pet.getPosition(), wavePosition);
+    menu('恢复动画');
+    await until(async () => (await ui()).mode === 'idle');
+    assert.deepEqual(await js('window.waveObserver.disconnect(); [...new Set(window.waveFrames)]'), ['wave_01.png', 'wave_02.png', 'wave_03.png', 'wave_04.png', 'wave_05.png', 'wave_06.png']);
+    const idleArt = await visibleArt();
+    assert.ok(Math.abs(waveArt.height - idleArt.height) < 0.5, 'wave and idle have the same visible character height');
+    assert.ok(Math.abs(waveArt.bottom - idleArt.bottom) < 0.5, 'wave and idle feet stay aligned');
+    assert.deepEqual(pet.getPosition(), wavePosition);
+    assert.equal((await ui()).roaming, true);
+    await until(async () => (await ui()).mode === 'walk');
+    results.push('Hello click plays six Wave frames once, pause freezes it, returns to idle without moving or shifting the image baseline, then roaming resumes');
+
+    await clickResponse(4); await until(async () => (await ui()).mode === 'heart');
     const oldToken = (await ui()).actionId;
     const [x,y] = pet.getPosition();
     await js(`window.petBridge.beginDrag({screenX:${x},screenY:${y}})`);

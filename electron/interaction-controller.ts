@@ -2,7 +2,13 @@ import { SYSTEM_CLOCK, type ControllerClock } from './controller-clock.js';
 
 export const INTERACTION_CONFIG = {
   bubbleDurationMs: 2_600,
-  messages: ['你好呀!', '在干嘛？', '休息一下吧~', '今天也要想我哦~', '爱你哦~'],
+  responses: [
+    { message: '你好呀！', action: 'wave' },
+    { message: '在干嘛？', action: null },
+    { message: '休息一下吧~', action: null },
+    { message: '今天也要想我哦~', action: null },
+    { message: '爱你哦~', action: 'heart' },
+  ],
 } as const;
 
 type Options = { autoSit: boolean; idleSeconds: number; bubbles: boolean };
@@ -18,7 +24,7 @@ export class InteractionController {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private disposed = false;
 
-  constructor(private readonly onChange: () => void, private readonly clock: ControllerClock = SYSTEM_CLOCK) {
+  constructor(private readonly onChange: () => void, private readonly clock: ControllerClock = SYSTEM_CLOCK, private readonly random: () => number = () => Math.random()) {
     this.lastActivity = clock.now();
   }
 
@@ -42,16 +48,19 @@ export class InteractionController {
   }
 
   activity(showBubble = false) {
-    if (this.disposed) return;
+    if (this.disposed) return null;
     this.lastActivity = this.clock.now();
     this.sitting = false;
-    if (showBubble && this.options.bubbles) {
-      const messages = INTERACTION_CONFIG.messages;
-      this.message = messages[Math.floor(Math.random() * messages.length)];
+    const response = showBubble
+      ? INTERACTION_CONFIG.responses[Math.floor(this.random() * INTERACTION_CONFIG.responses.length)]
+      : null;
+    if (response && this.options.bubbles) {
+      this.message = response.message;
       this.bubbleDeadline = this.lastActivity + INTERACTION_CONFIG.bubbleDurationMs;
     }
     this.onChange();
     this.schedule();
+    return response;
   }
 
   dismissBubble() {

@@ -14,6 +14,8 @@ export type AnimationDefinition = {
   holdLastFrame?: boolean;
   requireAllFrames?: boolean;
   reverseOf?: AnimationName;
+  /** Uniform visual correction for transparent padding; offset is relative to display height. */
+  presentation?: { scale: number; offsetYRatio: number };
 };
 
 const asset = (path: string) => `${import.meta.env.BASE_URL}${path}`;
@@ -27,10 +29,22 @@ const heartFrames = Array.from({ length: 8 }, (_, index) =>
   asset(`animations/heart/heart_${String(index + 1).padStart(2, '0')}.png`),
 );
 
+// Solid-alpha bounds: idle y=19..1388 on 1408px, wave y=26..692 on 724px.
+// Match visible height and feet without trimming or resampling either source.
+const waveScale = ((1388 - 19) / 1408) / ((692 - 26) / 724);
+
 /** Add frame paths and timing here to register another animation clip. */
 export const ANIMATIONS: Record<AnimationName, AnimationDefinition> = {
   idle: { frames: idleFrames, framesPerSecond: 3, loop: true, fallback: 'static' },
-  wave: { frames: [], framesPerSecond: 8, loop: false, durationMs: 680, fallback: 'idle', fallbackMotion: 'wave' },
+  wave: {
+    frames: [1, 2, 3, 4, 5, 6].map((frame) => asset(`animations/wave/wave_${String(frame).padStart(2, '0')}.png`)),
+    framesPerSecond: 4,
+    loop: false,
+    durationMs: 1_500,
+    requireAllFrames: true,
+    fallback: 'idle',
+    presentation: { scale: waveScale, offsetYRatio: (1388 / 1408 - 1) - waveScale * (692 / 724 - 1) },
+  },
   heart: {
     frames: heartFrames,
     framesPerSecond: 4,

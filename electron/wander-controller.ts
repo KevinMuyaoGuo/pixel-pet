@@ -182,7 +182,7 @@ export class WanderController {
     this.finishAction();
   }
 
-  finishAction() {
+  finishAction(returnToIdle = false) {
     if (!this.enabled || !this.interactionActive) {
       this.callbacks.onModeChange('idle');
       return;
@@ -191,7 +191,8 @@ export class WanderController {
     this.phaseDeadline = this.now() + this.interactionRemainingMs;
     this.interactionRemainingMs = 0;
     this.lastTick = this.now();
-    if (!this.manualDragActive) this.callbacks.onModeChange(this.mode);
+    if (returnToIdle) this.startRest(this.lastTick);
+    else if (!this.manualDragActive) this.callbacks.onModeChange(this.mode);
     if (!this.paused && !this.manualDragActive) this.scheduleTick();
   }
 

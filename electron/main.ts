@@ -589,8 +589,10 @@ ipcMain.on('pet:action-start', (event, mode: unknown) => {
 });
 ipcMain.on('pet:click', (event) => {
   if (!isAppSender(event) || !petWindow || event.sender !== petWindow.webContents || paused || dragOrigin) return;
-  interactionController?.activity(true);
-  if (settings.allowClickHeart) startPetAction('heart');
+  // Keep the current phrase paired with its one-shot action until it finishes.
+  if (activeActionId !== null && (animationMode === 'wave' || animationMode === 'heart')) return;
+  const response = interactionController?.activity(true);
+  if (response?.action && (response.action !== 'heart' || settings.allowClickHeart)) startPetAction(response.action);
 });
 ipcMain.on('pet:hover', (event, frame: unknown) => {
   if (!isAppSender(event) || event.sender !== petWindow?.webContents || paused || dragOrigin
@@ -607,7 +609,7 @@ ipcMain.on('pet:action-finish', (event, actionId: unknown) => {
   if (!isAppSender(event) || !petWindow || event.sender !== petWindow.webContents || dragOrigin
     || typeof actionId !== 'number' || !Number.isSafeInteger(actionId) || actionId !== activeActionId) return;
   activeActionId = null;
-  wanderController?.finishAction();
+  wanderController?.finishAction(animationMode === 'wave');
   if (!wanderController?.isEnabled) animationMode = 'idle';
   sendUiState();
 });

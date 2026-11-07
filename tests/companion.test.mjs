@@ -96,6 +96,31 @@ test('rapid clicks replace one bubble and share one timer; disabling clears it',
   controller.dispose();
 });
 
+test('click phrases and actions are selected together; unassigned phrases have no action', () => {
+  const clock = new Clock();
+  let index = 0;
+  const controller = new InteractionController(() => {}, clock, () => (index + 0.5) / 5);
+  const expected = [
+    { message: '你好呀！', action: 'wave' },
+    { message: '在干嘛？', action: null },
+    { message: '休息一下吧~', action: null },
+    { message: '今天也要想我哦~', action: null },
+    { message: '爱你哦~', action: 'heart' },
+  ];
+  for (index = 0; index < expected.length; index++) {
+    assert.deepEqual(controller.activity(true), expected[index]);
+    assert.equal(controller.bubble.message, expected[index].message);
+    assert.equal(clock.tasks.size, 1);
+  }
+  controller.configure({ autoSit: false, idleSeconds: 60, bubbles: false });
+  index = 0;
+  assert.deepEqual(controller.activity(true), expected[0]);
+  assert.equal(controller.bubble.message, null);
+  controller.dispose();
+  assert.equal(controller.activity(true), null);
+  assert.equal(clock.tasks.size, 0);
+});
+
 test('pause, drag and one-shot blockers do not cause an overdue sit on resume', () => {
   const clock = new Clock();
   const controller = new InteractionController(() => {}, clock);
@@ -174,6 +199,29 @@ test('pause + drag restores correctly; locked position cannot start roaming', ()
   assert.equal(controller.start(), false);
   assert.equal(clock.tasks.size, 0);
   controller.dispose();
+});
+
+test('wave returns to idle without moving, then roaming resumes after its rest', () => {
+  const clock = new Clock();
+  const { controller, window } = makeWander(clock);
+  controller.start(); clock.advance(1330);
+  const position = window.getPosition();
+  controller.beginAction('wave');
+  clock.advance(1500);
+  assert.equal(controller.currentMode, 'wave');
+  assert.deepEqual(window.getPosition(), position);
+  controller.finishAction(true);
+  assert.equal(controller.currentMode, 'idle');
+  assert.equal(controller.isEnabled, true);
+  assert.deepEqual(window.getPosition(), position);
+  clock.advance(500);
+  assert.equal(controller.currentMode, 'idle');
+  assert.deepEqual(window.getPosition(), position);
+  clock.advance(830);
+  assert.equal(controller.currentMode, 'walk');
+  assert.notDeepEqual(window.getPosition(), position);
+  controller.dispose();
+  assert.equal(clock.tasks.size, 0);
 });
 
 test('standing transition suspends roaming until complete and can be cancelled by drag', () => {

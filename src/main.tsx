@@ -172,6 +172,7 @@ function Pet() {
     ? resolvedCharacterImage
     : ANIMATIONS.idle.frames[0] ?? STATIC_PET_IMAGE;
   const hasAnimationFrames = availableFrames.length > 1;
+  const presentation = framePreloadComplete && availableFrames.length ? ANIMATIONS[currentAnimation].presentation : undefined;
   const usesDirectionalFrames = hasDirectionalFrames || (availableFrames.length === 0 && fallbackDirectionalFrames.length > 0);
   const visualMode = state.mode === 'paused' ? state.beforePause : state.mode;
   const statusText = state.mode === 'paused' ? '动画已暂停'
@@ -244,13 +245,15 @@ function Pet() {
         className="pet-art"
         src={characterImage}
         alt="Q版桌宠"
-        style={{ height: DISPLAY_HEIGHT * petScalePercent / 100, '--direction-scale': state.facing === 'left' && !usesDirectionalFrames && currentAnimation !== 'heart' ? -1 : 1 } as React.CSSProperties}
+        style={{
+          height: DISPLAY_HEIGHT * petScalePercent / 100,
+          '--direction-scale': state.facing === 'left' && !usesDirectionalFrames && currentAnimation !== 'heart' && currentAnimation !== 'wave' ? -1 : 1,
+          '--art-scale': presentation?.scale ?? 1,
+          '--art-offset-y': `${(presentation?.offsetYRatio ?? 0) * DISPLAY_HEIGHT * petScalePercent / 100}px`,
+        } as React.CSSProperties}
         draggable={false}
         onPointerEnter={handleCharacterHover}
         onPointerMove={handleCharacterHover}
-        onAnimationEnd={(event) => {
-          if (event.animationName === 'wave-gesture' && state.mode === 'wave') handleAnimationComplete();
-        }}
       />
     </div>
   </main>;
