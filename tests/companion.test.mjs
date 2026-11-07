@@ -8,7 +8,7 @@ import { WanderController } from '../dist-electron/wander-controller.js';
 import { SettingsStore } from '../dist-electron/settings-store.js';
 import { DEFAULT_APP_SETTINGS, normalizeAppSettings, validateSettingsPatch } from '../dist-electron/settings-types.js';
 import { animationStateFor } from '../dist-electron/pet-state.js';
-import { bubbleBounds } from '../dist-electron/window-geometry.js';
+import { bubbleBounds, bubbleLayout } from '../dist-electron/window-geometry.js';
 
 class Clock {
   time = 0;
@@ -176,6 +176,29 @@ test('pause + drag restores correctly; locked position cannot start roaming', ()
   controller.dispose();
 });
 
+test('standing transition suspends roaming until complete and can be cancelled by drag', () => {
+  const clock = new Clock();
+  const { controller, window } = makeWander(clock);
+  controller.start(); clock.advance(1330);
+  const position = window.getPosition();
+  controller.beginAction('stand');
+  clock.advance(670);
+  assert.equal(controller.currentMode, 'stand');
+  assert.deepEqual(window.getPosition(), position);
+  controller.finishAction();
+  assert.equal(controller.currentMode, 'walk');
+  assert.deepEqual(window.getPosition(), position);
+  clock.advance(330);
+  assert.notDeepEqual(window.getPosition(), position);
+  controller.beginAction('stand');
+  controller.onManualDragStarted();
+  controller.onManualDragEnded();
+  assert.equal(controller.currentMode, 'walk');
+  assert.equal(clock.tasks.size, 1);
+  controller.dispose();
+  assert.equal(clock.tasks.size, 0);
+});
+
 test('negative-origin display, edge turns and display removal keep full window in workArea', () => {
   const clock = new Clock();
   const { controller, window, display } = makeWander(clock);
@@ -214,6 +237,19 @@ test('state projection has drag priority, paused state and directional walks', (
   assert.equal(animationStateFor({ ...base, paused: true, mode: 'dragging' }), 'DRAGGING');
   assert.equal(animationStateFor({ ...base, paused: true }), 'PAUSED');
   assert.equal(animationStateFor({ ...base, mode: 'sit' }), 'SIT');
+  assert.equal(animationStateFor({ ...base, mode: 'stand' }), 'STAND');
+});
+
+test('bubble placement changes at the top edge using the same rule as its bounds', () => {
+  const area = { x: -1920, y: -1080, width: 1920, height: 1040 };
+  for (const [offset, placement] of [[0, 'below'], [51, 'below'], [52, 'above'], [300, 'above']]) {
+    const pet = { x: -1500, y: area.y + offset, width: 160, height: 220 };
+    const layout = bubbleLayout(pet, area);
+    assert.equal(layout.placement, placement);
+    assert.deepEqual(layout.bounds, bubbleBounds(pet, area));
+    if (placement === 'below') assert.ok(layout.bounds.y > pet.y);
+    else assert.ok(layout.bounds.y < pet.y);
+  }
 });
 
 test('settings migrate v1, reject invalid patches, persist on restart, and recover corrupt files', () => {

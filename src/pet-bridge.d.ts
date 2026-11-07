@@ -10,6 +10,7 @@ declare global {
       setRoaming: (enabled: boolean) => void;
       startAction: (mode: 'wave' | 'heart') => void;
       click: () => void;
+      hover: (sitFrame: number | null) => void;
       finishAction: (actionId: number) => void;
       beginDrag: (point: { screenX: number; screenY: number }) => void;
       dragTo: (point: { screenX: number; screenY: number }) => void;

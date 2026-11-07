@@ -73,6 +73,20 @@ const watchdog = setTimeout(() => { console.error('SMOKE TIMEOUT'); app.exit(1);
     await until(() => !bubble.isVisible());
     results.push('30 rapid native IPC clicks: one HEART, one nonfocusable bubble; both finish');
 
+    const bubbleArea = screen.getDisplayMatching(pet.getBounds()).workArea;
+    const originalPosition = pet.getPosition();
+    pet.setPosition(originalPosition[0], bubbleArea.y);
+    await js('window.petBridge.click()');
+    await until(() => bubble.isVisible());
+    await until(async () => await bubble.webContents.executeJavaScript('document.querySelector(".speech-bubble")?.dataset.placement === "below"'));
+    assert.equal(await bubble.webContents.executeJavaScript('getComputedStyle(document.querySelector(".speech-bubble"), "::after").top'), '-7px');
+    pet.setPosition(originalPosition[0], bubbleArea.y + 100);
+    await until(async () => await bubble.webContents.executeJavaScript('document.querySelector(".speech-bubble")?.dataset.placement === "above"'));
+    assert.equal(await bubble.webContents.executeJavaScript('getComputedStyle(document.querySelector(".speech-bubble"), "::after").bottom'), '-7px');
+    pet.setPosition(...originalPosition);
+    await until(async () => (await ui()).mode === 'idle');
+    results.push('top-edge bubble points upward; moving back below threshold restores downward tail while bubble remains visible');
+
     await js('window.appBridge.openSettings()');
     await until(() => BrowserWindow.getAllWindows().some(w => w.webContents.getURL().endsWith('/settings.html')));
     const settingsWindow = BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/settings.html'));
@@ -136,13 +150,30 @@ const watchdog = setTimeout(() => { console.error('SMOKE TIMEOUT'); app.exit(1);
     await wait(400);
     assert.deepEqual(pet.getPosition(), seated);
     assert.equal((await ui()).roaming, true);
-    assert.ok((await js('document.querySelector(".pet-art").src')).endsWith('/idle_01.png'));
+    const hasSitFrames = ['01', '02', '03', '04'].every(frame => fs.existsSync(path.join(root, `public/animations/sit/sit_${frame}.png`)));
+    if (hasSitFrames) {
+      await until(async () => (await js('document.querySelector(".pet-art").src')).endsWith('/sit_04.png'));
+      menu('暂停动画');
+      await js('window.petBridge.hover(3)');
+      assert.equal((await ui()).mode, 'sit');
+      menu('恢复动画');
+      await js('window.petBridge.hover(3)');
+      await until(async () => (await ui()).mode === 'stand');
+      const standId = (await ui()).actionId;
+      await js('window.petBridge.hover(3)');
+      assert.equal((await ui()).actionId, standId);
+      await wait(200);
+      assert.deepEqual(pet.getPosition(), seated);
+      await until(async () => (await ui()).mode !== 'stand');
+    } else {
+      assert.ok((await js('document.querySelector(".pet-art").src')).endsWith('/idle_01.png'));
+    }
     await js('window.petBridge.click()');
     await until(async () => (await ui()).mode !== 'sit');
     await js('window.appBridge.setRoaming(false)');
     const stopped = pet.getPosition(); await wait(200);
     assert.deepEqual(pet.getPosition(), stopped);
-    results.push('lock blocks drag/roaming; native 15s SIT stops movement with standing fallback; click wakes; stop does not jump');
+    results.push('lock blocks drag/roaming; SIT holds pose; hover stands once without moving until complete; paused hover ignored; click wakes fallback; stop does not jump');
     menu('隐藏桌宠'); assert.equal(pet.isVisible(), false);
     menu('显示桌宠'); assert.equal(pet.isVisible(), true);
     results.push('tray hide/show stays usable');
