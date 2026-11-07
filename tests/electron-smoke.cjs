@@ -69,6 +69,7 @@ const watchdog = setTimeout(() => { console.error('SMOKE TIMEOUT'); app.exit(1);
     assert.equal(bubble.isFocusable(), false);
     assert.equal(bubble.isFocused(), false);
     assert.equal(BrowserWindow.getAllWindows().length, 2);
+    await until(async () => await bubble.webContents.executeJavaScript('document.querySelectorAll(".speech-bubble").length === 1'));
     await until(async () => (await ui()).mode === 'idle');
     await until(() => !bubble.isVisible());
     results.push('30 rapid native IPC clicks: one HEART, one nonfocusable bubble; both finish');

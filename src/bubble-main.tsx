@@ -11,7 +11,7 @@ function Bubble() {
     const unsubscribe = window.bubbleBridge.onState(setState);
     return () => { active = false; unsubscribe(); };
   }, []);
-  return state.message ? <div className="speech-bubble" data-placement={state.placement} role="status">{state.message}</div> : null;
+  return state.message ? <div className="speech-bubble" data-placement={state.placement} role="status"><span className="speech-bubble__text">{state.message}</span></div> : null;
 }
 
 const root = createRoot(document.getElementById('root')!);

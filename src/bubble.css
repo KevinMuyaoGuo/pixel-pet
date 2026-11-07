@@ -1,6 +1,49 @@
 * { box-sizing: border-box; }
 html, body, #root { width: 100%; height: 100%; margin: 0; background: transparent; overflow: hidden; pointer-events: none; user-select: none; }
 #root { display: flex; justify-content: center; align-items: center; padding: 6px 8px 12px; }
-.speech-bubble { position: relative; padding: 9px 12px; max-width: 100%; border: 2px solid #47382c; background: #fff9e8; color: #47382c; font: bold 12px/1.2 ui-monospace, Menlo, monospace; text-align: center; box-shadow: 3px 3px 0 #47382c33; }
-.speech-bubble::after { content: ''; position: absolute; bottom: -7px; left: calc(50% - 5px); width: 9px; height: 9px; background: #fff9e8; border-right: 2px solid #47382c; border-bottom: 2px solid #47382c; transform: rotate(45deg); }
-.speech-bubble[data-placement="below"]::after { top: -7px; bottom: auto; transform: rotate(225deg); }
+
+.speech-bubble {
+  --ink: #47382c;
+  --paper: #fff9e8;
+  --pixel-corners: polygon(4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px), 0 4px, 2px 4px, 2px 2px, 4px 2px);
+  position: relative;
+  max-width: 100%;
+  padding: 2px;
+  color: var(--ink);
+  font: bold 12px/16px ui-monospace, Menlo, monospace;
+  text-align: center;
+  filter: drop-shadow(2px 2px 0 #47382c33);
+}
+
+/* Nested stepped silhouettes keep the outline on a 2px grid. */
+.speech-bubble::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--ink);
+  clip-path: var(--pixel-corners);
+}
+.speech-bubble__text {
+  position: relative;
+  display: block;
+  padding: 8px 10px;
+  background: var(--paper);
+  clip-path: var(--pixel-corners);
+}
+
+/* Stair-step tail: no rotated diagonal edges. */
+.speech-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -7px;
+  left: calc(50% - 8px);
+  width: 16px;
+  height: 10px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='10' viewBox='0 0 16 10' shape-rendering='crispEdges'%3E%3Cpath fill='%2347382c' d='M0 0h16v4h-4v4h-2v2H6V8H4V4H0Z'/%3E%3Cpath fill='%23fff9e8' d='M2 0h12v2h-4v4H6V2H2Z'/%3E%3C/svg%3E") center / 16px 10px no-repeat;
+  image-rendering: pixelated;
+}
+.speech-bubble[data-placement="below"]::after {
+  top: -7px;
+  bottom: auto;
+  transform: scaleY(-1);
+}
