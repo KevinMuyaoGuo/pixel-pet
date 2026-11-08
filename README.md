@@ -11,7 +11,7 @@
 ## Features
 
 - Transparent, frameless, always-on-top pet window
-- Frame-based `idle`, `walk`, `heart`, and other animations
+- Frame-based idle, walk, wave, heart, sit, and stand-up animations
 - Autonomous roaming, random pauses, screen-edge detection, and turning
 - Menu bar controls, standalone settings, animation pause, and position lock
 - Persistent local settings and window position
@@ -19,10 +19,11 @@
 
 ## v0.6 — Interactive Companion
 
-- Click to show one random text bubble for 2.6 seconds. Repeated clicks replace the bubble; it follows the pet, ignores mouse input, and does not take keyboard focus.
-- After 60 seconds without interaction, auto-rest suspends roaming. Clicking, dragging, starting roaming, or disabling auto-sit wakes the pet. Pause and one-shot actions defer the inactivity deadline.
-- **SIT artwork is not included yet.** The logical SIT state holds the original standing idle frame as a static fallback (`pet.png` if idle also fails). To display a real sitting pose, provide all four `sit_01.png`–`sit_04.png` frames as described in the [SIT artwork interface](public/animations/sit/README.md). The transition plays once and holds its final frame. Partial/missing frames also use the static fallback.
-- Dragging takes priority over HEART. One-shot completion messages carry an action ID so an interrupted action cannot overwrite a newer state.
+- Left-click the pet to pick a random line. “你好呀！” (Hello!) plays a wave, and “爱你哦~” (Love you!) plays a heart when Click to heart is enabled. The other lines only show text. During either action, repeated clicks keep the current line and animation paired.
+- The six-frame wave plays once at 4 fps and returns to idle. Its visible height and foot position match idle. If roaming is enabled, it resumes after a rest.
+- One pixel-art speech bubble follows the pet for 2.6 seconds. Its tail points upward when the bubble appears below the pet near the top of the screen. Mouse input passes through the bubble, and keyboard focus stays where it was.
+- After 60 seconds without interaction, auto-sit suspends roaming, plays the four-frame sit transition, and holds the seated pose. Hovering over the seated pet reverses the transition from the current frame to stand it back up. Clicking, dragging, starting roaming, or disabling auto-sit also wakes it. Pause and one-shot actions defer the inactivity deadline.
+- Missing sit frames fall back to a standing idle frame, or `pet.png` if idle also fails. Dragging takes priority over one-shot actions.
 - Walking cadence follows movement speed with a gentler increase at higher speeds.
 
 Settings → Behavior includes the interaction controls; character scale is under Appearance:
@@ -32,6 +33,7 @@ Settings → Behavior includes the interaction controls; character scale is unde
 | Auto-sit | On | Suspend roaming after inactivity |
 | Auto-sit delay | 60 seconds | 15–600 seconds |
 | Interaction bubbles | On | One bubble at a time, 2.6 seconds |
+| Click to heart | On | Play the heart animation for “爱你哦~” |
 | Character scale | 100% | 60%–150%, proportional |
 | Roaming speed | 30 DIP/s | 10–120 DIP/s |
 
@@ -106,8 +108,8 @@ The main process is the only writer of configuration. Renderers access limited, 
 | `electron/main.ts` | Tray, windows, menus, login items, Dock, and IPC |
 | `electron/settings-store.ts`, `electron/settings-types.ts` | Versioned settings and validation |
 | `electron/wander-controller.ts` | Pet window movement and roaming control |
-| `electron/interaction-controller.ts`, `electron/pet-state.ts` | Inactivity, bubble timing, and shared action state |
-| `src/bubble-main.tsx`, `bubble.html` | Independent nonfocusable bubble view |
+| `electron/interaction-controller.ts`, `electron/pet-state.ts` | Phrase-to-action mapping, inactivity, bubble timing, and shared action state |
+| `src/bubble-main.tsx`, `src/bubble.css`, `bubble.html` | Pixel-art bubble view and tail direction |
 | `src/main.tsx`, `src/animation-system.ts` | Pet rendering and frame-based animation |
 | `src/settings-main.tsx`, `src/settings.css`, `settings.html` | Standalone settings window |
 | `public/` | Character image and animation assets |
