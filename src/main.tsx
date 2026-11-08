@@ -7,13 +7,13 @@ import './style.css';
 
 const DISPLAY_HEIGHT = 180;
 type PetMode = AnimationName | 'dragging' | 'paused';
-type PetState = { mode: PetMode; beforePause: PetMode; hovered: boolean; locked: boolean; roaming: boolean; facing: Facing; actionId: number | null; animationState: PetAnimationState };
+type PetState = { mode: PetMode; beforePause: PetMode; hovered: boolean; locked: boolean; roaming: boolean; facing: Facing; actionId: number | null; animationState: PetAnimationState; standFromFrame: number };
 type PetAction =
   | { type: 'sync-ui'; uiState: PetUiState }
   | { type: 'set-hovered'; hovered: boolean }
   | { type: 'set-locked'; locked: boolean };
 
-const initialState: PetState = { mode: 'idle', beforePause: 'idle', hovered: false, locked: false, roaming: false, facing: 'right', actionId: null, animationState: 'IDLE' };
+const initialState: PetState = { mode: 'idle', beforePause: 'idle', hovered: false, locked: false, roaming: false, facing: 'right', actionId: null, animationState: 'IDLE', standFromFrame: 3 };
 
 function petReducer(state: PetState, action: PetAction): PetState {
   switch (action.type) {
@@ -27,6 +27,7 @@ function petReducer(state: PetState, action: PetAction): PetState {
         roaming: action.uiState.roaming,
         facing: action.uiState.direction,
         actionId: action.uiState.actionId,
+        standFromFrame: action.uiState.standFromFrame ?? 3,
         animationState: animationStateFor(action.uiState),
       };
     }
@@ -35,8 +36,10 @@ function petReducer(state: PetState, action: PetAction): PetState {
   }
 }
 
-function useAnimationFrame(mode: AnimationName, facing: Facing, paused: boolean, playbackRate: number, actionId: number | null, framesByAnimation: Partial<Record<AnimationName, LoadedAnimation>>, onComplete: () => void) {
-  const [frameIndex, setFrameIndex] = React.useState(0);
+function useAnimationFrame(mode: AnimationName, facing: Facing, paused: boolean, playbackRate: number, actionId: number | null, initialFrame: number, framesByAnimation: Partial<Record<AnimationName, LoadedAnimation>>, onComplete: () => void) {
+  const key = `${mode}:${actionId ?? ''}`;
+  const [cursor, setCursor] = React.useState({ key, index: initialFrame });
+  const frameIndex = cursor.key === key ? cursor.index : initialFrame;
   const playback = React.useRef<{ frame: number; remainingMs: number | null }>({ frame: 0, remainingMs: null });
   const clip = framesByAnimation[mode];
   const directionalFrames = clip?.directionalFrames[facing] ?? NO_FRAMES;
@@ -44,9 +47,9 @@ function useAnimationFrame(mode: AnimationName, facing: Facing, paused: boolean,
   const frames = hasDirectionalFrames ? directionalFrames : clip?.frames ?? NO_FRAMES;
 
   React.useEffect(() => {
-    playback.current = { frame: 0, remainingMs: null };
-    setFrameIndex(0);
-  }, [mode, actionId]);
+    playback.current = { frame: initialFrame, remainingMs: null };
+    setCursor({ key, index: initialFrame });
+  }, [key, initialFrame]);
   React.useEffect(() => {
     if (paused) return;
     const definition = ANIMATIONS[mode];
@@ -65,12 +68,12 @@ function useAnimationFrame(mode: AnimationName, facing: Facing, paused: boolean,
           timing.remainingMs = null;
           const next = timing.frame + 1;
           if (next >= frames.length && !definition.loop) {
-            setFrameIndex(frames.length - 1);
+            setCursor({ key, index: frames.length - 1 });
             if (!definition.holdLastFrame) onComplete();
             return;
           }
           timing.frame = next % frames.length;
-          setFrameIndex(timing.frame);
+          setCursor({ key, index: timing.frame });
           scheduleNextFrame();
         }, remainingMs / playbackRate);
       };
@@ -87,7 +90,7 @@ function useAnimationFrame(mode: AnimationName, facing: Facing, paused: boolean,
       const timer = window.setTimeout(onComplete, definition.durationMs);
       return () => window.clearTimeout(timer);
     }
-  }, [mode, paused, playbackRate, actionId, frames, onComplete]);
+  }, [mode, paused, playbackRate, key, initialFrame, frames, onComplete]);
 
   return { frameIndex, frames, hasDirectionalFrames };
 }
@@ -99,6 +102,8 @@ function Pet() {
   const [petScalePercent, setPetScalePercent] = React.useState(100);
   const [roamingSpeed, setRoamingSpeed] = React.useState(DEFAULT_APP_SETTINGS.roamingSpeedDipPerSecond);
   const pointerStart = React.useRef<{ id: number; x: number; y: number; dragging: boolean } | null>(null);
+  const hoverRequested = React.useRef(false);
+  React.useEffect(() => { hoverRequested.current = false; }, [state.mode]);
 
   React.useEffect(() => {
     let active = true;
@@ -148,7 +153,8 @@ function Pet() {
   const movementSpeedRatio = roamingSpeed / DEFAULT_APP_SETTINGS.roamingSpeedDipPerSecond;
   const walkPlaybackRate = movementSpeedRatio > 1 ? Math.sqrt(movementSpeedRatio) : movementSpeedRatio;
   const playbackRate = currentAnimation === 'walk' ? walkPlaybackRate : 1;
-  const { frameIndex, frames, hasDirectionalFrames } = useAnimationFrame(currentAnimation, state.facing, animationPaused, playbackRate, state.actionId, framesByAnimation, handleAnimationComplete);
+  const initialFrame = currentAnimation === 'stand' ? 3 - state.standFromFrame : 0;
+  const { frameIndex, frames, hasDirectionalFrames } = useAnimationFrame(currentAnimation, state.facing, animationPaused, playbackRate, state.actionId, initialFrame, framesByAnimation, handleAnimationComplete);
   const idleClip = framesByAnimation.idle;
   const idleDirectionalFrames = idleClip?.directionalFrames[state.facing] ?? NO_FRAMES;
   const idleFrames = idleDirectionalFrames.length ? idleDirectionalFrames : idleClip?.frames ?? NO_FRAMES;
@@ -166,6 +172,7 @@ function Pet() {
     ? resolvedCharacterImage
     : ANIMATIONS.idle.frames[0] ?? STATIC_PET_IMAGE;
   const hasAnimationFrames = availableFrames.length > 1;
+  const presentation = framePreloadComplete && availableFrames.length ? ANIMATIONS[currentAnimation].presentation : undefined;
   const usesDirectionalFrames = hasDirectionalFrames || (availableFrames.length === 0 && fallbackDirectionalFrames.length > 0);
   const visualMode = state.mode === 'paused' ? state.beforePause : state.mode;
   const statusText = state.mode === 'paused' ? '动画已暂停'
@@ -173,6 +180,7 @@ function Pet() {
       : state.mode === 'wave' ? '挥手中'
         : state.mode === 'heart' ? '比心中'
         : state.mode === 'sit' ? hasAnimationFrames ? '坐下休息' : '休息中，坐姿素材缺失，静止站立回退'
+        : state.mode === 'stand' ? '正在站起'
         : state.mode === 'walk' ? '行走中'
           : state.mode === 'idle' ? '待机' : state.mode;
 
@@ -180,6 +188,12 @@ function Pet() {
     if (event.button !== 0) return;
     pointerStart.current = { id: event.pointerId, x: event.screenX, y: event.screenY, dragging: false };
     event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleCharacterHover = (event: React.PointerEvent<HTMLImageElement>) => {
+    if (event.pointerType !== 'mouse' || state.mode !== 'sit' || pointerStart.current || hoverRequested.current) return;
+    hoverRequested.current = true;
+    window.petBridge.hover(frames.length === 4 ? frameIndex : null);
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLElement>) => {
@@ -231,11 +245,15 @@ function Pet() {
         className="pet-art"
         src={characterImage}
         alt="Q版桌宠"
-        style={{ height: DISPLAY_HEIGHT * petScalePercent / 100, '--direction-scale': state.facing === 'left' && !usesDirectionalFrames && currentAnimation !== 'heart' ? -1 : 1 } as React.CSSProperties}
+        style={{
+          height: DISPLAY_HEIGHT * petScalePercent / 100,
+          '--direction-scale': state.facing === 'left' && !usesDirectionalFrames && currentAnimation !== 'heart' && currentAnimation !== 'wave' ? -1 : 1,
+          '--art-scale': presentation?.scale ?? 1,
+          '--art-offset-y': `${(presentation?.offsetYRatio ?? 0) * DISPLAY_HEIGHT * petScalePercent / 100}px`,
+        } as React.CSSProperties}
         draggable={false}
-        onAnimationEnd={(event) => {
-          if (event.animationName === 'wave-gesture' && state.mode === 'wave') handleAnimationComplete();
-        }}
+        onPointerEnter={handleCharacterHover}
+        onPointerMove={handleCharacterHover}
       />
     </div>
   </main>;

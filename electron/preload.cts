@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('petBridge', {
   setRoaming: (enabled: boolean) => ipcRenderer.send('pet:set-roaming', enabled),
   startAction: (mode: 'wave' | 'heart') => ipcRenderer.send('pet:action-start', mode),
   click: () => ipcRenderer.send('pet:click'),
+  hover: (sitFrame: number | null) => ipcRenderer.send('pet:hover', sitFrame),
   finishAction: (actionId: number) => ipcRenderer.send('pet:action-finish', actionId),
   beginDrag: (point: ScreenPoint) => ipcRenderer.send('pet:begin-drag', point),
   dragTo: (point: ScreenPoint) => ipcRenderer.send('pet:drag-to', point),

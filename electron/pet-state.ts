@@ -1,5 +1,5 @@
-export type PetMode = 'idle' | 'walk' | 'wave' | 'heart' | 'sit' | 'dragging';
-export type PetAnimationState = 'IDLE' | 'WALK_LEFT' | 'WALK_RIGHT' | 'WAVE' | 'HEART' | 'SIT' | 'DRAGGING' | 'PAUSED';
+export type PetMode = 'idle' | 'walk' | 'wave' | 'heart' | 'sit' | 'stand' | 'dragging';
+export type PetAnimationState = 'IDLE' | 'WALK_LEFT' | 'WALK_RIGHT' | 'WAVE' | 'HEART' | 'SIT' | 'STAND' | 'DRAGGING' | 'PAUSED';
 
 export type PetUiState = {
   paused: boolean;
@@ -8,9 +8,11 @@ export type PetUiState = {
   mode: PetMode;
   direction: 'left' | 'right';
   actionId: number | null;
+  standFromFrame: number;
 };
 
-export type BubbleState = { message: string | null };
+export type BubblePlacement = 'above' | 'below';
+export type BubbleState = { message: string | null; placement: BubblePlacement };
 
 export function animationStateFor(state: PetUiState): PetAnimationState {
   if (state.mode === 'dragging') return 'DRAGGING';
