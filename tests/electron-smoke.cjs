@@ -266,10 +266,16 @@ const watchdog = setTimeout(() => { console.error('SMOKE TIMEOUT'); app.exit(1);
     await js(`window.petBridge.finishAction(${enterId}); for (let i = 0; i < 30; i++) window.petBridge.click()`);
     assert.equal((await ui()).actionId, wakeId);
     await until(async () => (await sleepFrame()).endsWith('/sleep_exit_04.png'));
+    await until(async () => (await ui()).mode === 'stand');
+    const wakeStandId = (await ui()).actionId;
+    await js(`window.petBridge.finishAction(${wakeId}); window.petBridge.click()`);
+    assert.equal((await ui()).actionId, wakeStandId);
+    assert.deepEqual(pet.getPosition(), sleepPosition);
+    await until(async () => (await sleepFrame()).endsWith('/sit_01.png'));
     await until(async () => (await ui()).mode === 'idle');
     assert.deepEqual(pet.getPosition(), sleepPosition);
     assert.equal((await ui()).roaming, true);
-    results.push('sleep enter and loop, simulated suspend/resume, rapid click wakes once and finishes in idle');
+    results.push('sleep enter and loop, simulated suspend/resume, rapid click wakes once, stands, and finishes in idle');
 
   }
   fs.writeFileSync(marker, JSON.stringify(reopen ? { ...JSON.parse(fs.readFileSync(marker, 'utf8')), reopenResults: results } : { data, results }, null, 2));

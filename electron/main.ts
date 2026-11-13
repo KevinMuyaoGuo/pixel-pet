@@ -42,6 +42,7 @@ let interactionController: InteractionController | null = null;
 let actionSequence = 0;
 let activeActionId: number | null = null;
 let standFromFrame = 3;
+let wakeStandId: number | null = null;
 let isQuitting = false;
 
 type ScreenPoint = { screenX: number; screenY: number };
@@ -118,7 +119,7 @@ function broadcastSnapshot() {
 
 function startPetAction(mode: ActionMode, autonomous = false) {
   if (paused || systemSuspended || dragOrigin || !petWindow?.isVisible()) return;
-  if (animationMode === 'sleep_exit' && activeActionId !== null) return;
+  if (activeActionId !== null && (animationMode === 'sleep_exit' || activeActionId === wakeStandId)) return;
   if (interactionController?.isSleeping) mode = 'sleep_exit';
   if (activeActionId !== null && animationMode === mode) {
     interactionController?.activity();
@@ -608,7 +609,7 @@ ipcMain.on('pet:action-start', (event, mode: unknown) => {
 ipcMain.on('pet:click', (event) => {
   if (!isAppSender(event) || !petWindow || event.sender !== petWindow.webContents || paused || systemSuspended || dragOrigin) return;
   if (interactionController?.isSleeping) { startPetAction('sleep_exit'); return; }
-  if (animationMode === 'sleep_exit' && activeActionId !== null) return;
+  if (activeActionId !== null && (animationMode === 'sleep_exit' || activeActionId === wakeStandId)) return;
   // Keep the current phrase paired with its one-shot action until it finishes.
   if (activeActionId !== null && (animationMode === 'wave' || animationMode === 'heart')) return;
   const response = interactionController?.activity(true);
@@ -633,8 +634,17 @@ ipcMain.on('pet:action-finish', (event, actionId: unknown) => {
     return;
   }
   if (actionId !== activeActionId) return;
+  if (animationMode === 'sleep_exit') {
+    standFromFrame = 3;
+    activeActionId = wakeStandId = ++actionSequence;
+    // Keep the same roaming suspension through both wake-up clips.
+    wanderController?.beginAction('stand');
+    return;
+  }
+  const returnToIdle = animationMode === 'wave' || activeActionId === wakeStandId;
   activeActionId = null;
-  wanderController?.finishAction(animationMode === 'wave' || animationMode === 'sleep_exit');
+  wakeStandId = null;
+  wanderController?.finishAction(returnToIdle);
   if (!wanderController?.isEnabled) animationMode = 'idle';
   sendUiState();
 });
