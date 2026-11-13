@@ -2,7 +2,7 @@ import { SYSTEM_CLOCK, type ControllerClock } from './controller-clock.js';
 
 export type Facing = 'left' | 'right';
 export type WanderMode = 'idle' | 'walk';
-export type ActionMode = 'wave' | 'heart' | 'stand';
+export type ActionMode = 'wave' | 'heart' | 'stand' | 'sleep_exit';
 
 export type WanderConfig = {
   speedDipPerSecond: number;

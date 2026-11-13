@@ -17,6 +17,12 @@
 - Persistent local settings and window position
 - Secure communication between the Electron main process and renderer through preload and IPC
 
+## v0.7 — Smart Companion
+
+- The pet sits after 60 seconds and falls asleep after 180 seconds of inactivity by default. Click to play the wake-up animation and return to idle. Dragging takes priority and defers the wake-up animation until release.
+- Auto Sleep and Random Wave are enabled by default. Sleep Timeout accepts 30–1800 seconds. Behavior Frequency defaults to Normal and controls how often the pet waves on its own. These settings are saved locally under Behavior.
+- Sleep and rest suspend roaming. macOS suspend pauses animation and scheduling. Resume restores the pending behavior without replaying missed actions.
+
 ## v0.6 — Interactive Companion
 
 - Left-click the pet to pick a random line. “你好呀！” (Hello!) plays a wave, and “爱你哦~” (Love you!) plays a heart when Click to heart is enabled. The other lines only show text. During either action, repeated clicks keep the current line and animation paired.
@@ -37,7 +43,7 @@ Settings → Behavior includes the interaction controls; character scale is unde
 | Character scale | 100% | 60%–150%, proportional |
 | Roaming speed | 30 DIP/s | 10–120 DIP/s |
 
-Settings schema v2 automatically fills in new fields while preserving v1 preferences. Runtime actions and the inactivity countdown start fresh on launch; the existing “start roaming on launch” setting controls startup roaming.
+Settings schema v3 automatically fills in new fields while preserving existing preferences. Runtime actions and the inactivity countdown start fresh on launch; the existing “start roaming on launch” setting controls startup roaming.
 
 ## Run in Development
 
@@ -57,11 +63,11 @@ npm run build:icons
 npm run package:mac
 ```
 
-The DMG is written to `release/`; the app is written to `release/v0.6.0/mac-arm64/Pixel Pet.app`. Older version directories and DMGs are preserved. Rebuilding the same version archives its previous DMG with a timestamp. The installer is named `PixelPet-0.6.0-arm64.dmg`. Each build also copies `Allow-PixelPet.command` to `release/` so it can be distributed alongside the DMG.
+The DMG is written to `release/`; the app is written to `release/v0.7.0/mac-arm64/Pixel Pet.app`. Older version directories and DMGs are preserved. Rebuilding the same version archives its previous DMG with a timestamp. The installer is named `PixelPet-0.7.0-arm64.dmg`. Each build also copies `Allow-PixelPet.command` to `release/` so it can be distributed alongside the DMG.
 
 ## Install and Open for the First Time
 
-1. Download `PixelPet-0.6.0-arm64.dmg` and, if provided, `Allow-PixelPet.command` from the trusted release source.
+1. Download `PixelPet-0.7.0-arm64.dmg` and, if provided, `Allow-PixelPet.command` from the trusted release source.
 2. Quit any running copy of Pixel Pet. Open the DMG and drag `Pixel Pet.app` onto the **Applications** shortcut. When updating, replace the installed copy.
 3. If you downloaded the companion script, double-click `Allow-PixelPet.command` after installing the app. Terminal opens and a confirmation dialog appears. Review the message and click **Continue** only if you trust this release.
 4. When the script reports success, click **OK**. Its standalone Terminal window closes automatically; Terminal also quits if no other windows remain. Then open Pixel Pet from **Applications**. The script does not launch the app for you.

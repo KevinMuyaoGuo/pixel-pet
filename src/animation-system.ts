@@ -1,4 +1,5 @@
-export type AnimationName = 'idle' | 'wave' | 'heart' | 'walk' | 'sit' | 'stand' | 'sleeping' | 'thinking' | 'happy';
+export type AnimationName = 'idle' | 'wave' | 'heart' | 'walk' | 'sit' | 'sleep_enter' | 'sleep_loop' | 'sleep_exit' | 'stand' | 'sleeping' | 'thinking' | 'happy';
+export const isSleepAnimation = (mode: string) => mode === 'sleep_enter' || mode === 'sleep_loop' || mode === 'sleep_exit';
 export type Facing = 'left' | 'right';
 
 export type AnimationDefinition = {
@@ -32,6 +33,11 @@ const heartFrames = Array.from({ length: 8 }, (_, index) =>
 // Solid-alpha bounds: idle y=19..1388 on 1408px, wave y=26..692 on 724px.
 // Match visible height and feet without trimming or resampling either source.
 const waveScale = ((1388 - 19) / 1408) / ((692 - 26) / 724);
+
+const sleepFrames = (phase: 'enter' | 'loop' | 'exit') => [1, 2, 3, 4].map((frame) => {
+  const name = `sleep_${phase}`;
+  return asset(`animations/sleep/${name}/${name}_0${frame}.png`);
+});
 
 /** Add frame paths and timing here to register another animation clip. */
 export const ANIMATIONS: Record<AnimationName, AnimationDefinition> = {
@@ -67,6 +73,18 @@ export const ANIMATIONS: Record<AnimationName, AnimationDefinition> = {
     holdLastFrame: true,
     requireAllFrames: true,
     fallback: 'idle',
+  },
+  sleep_enter: {
+    frames: sleepFrames('enter'), framesPerSecond: 4, loop: false,
+    durationMs: 1_000, requireAllFrames: true, fallback: 'static',
+  },
+  sleep_loop: {
+    frames: sleepFrames('loop'), framesPerSecond: 2, loop: true,
+    requireAllFrames: true, fallback: 'sleep_enter',
+  },
+  sleep_exit: {
+    frames: sleepFrames('exit'), framesPerSecond: 4, loop: false,
+    durationMs: 1_000, requireAllFrames: true, fallback: 'static',
   },
   stand: { frames: [], reverseOf: 'sit', framesPerSecond: 6, loop: false, durationMs: 670, fallback: 'idle' },
   sleeping: { frames: [], framesPerSecond: 2, loop: true, fallback: 'idle' },

@@ -2,7 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { DEFAULT_APP_SETTINGS } from '../electron/settings-types';
 import { animationStateFor, type PetUiState, type PetAnimationState } from '../electron/pet-state';
-import { ANIMATIONS, NO_FRAMES, preloadAnimationFrames, STATIC_PET_IMAGE, type AnimationName, type Facing, type LoadedAnimation } from './animation-system';
+import { isSleepAnimation, ANIMATIONS, NO_FRAMES, preloadAnimationFrames, STATIC_PET_IMAGE, type AnimationName, type Facing, type LoadedAnimation } from './animation-system';
 import './style.css';
 
 const DISPLAY_HEIGHT = 180;
@@ -148,7 +148,7 @@ function Pet() {
   const currentAnimation: AnimationName = state.mode === 'paused'
     ? (state.beforePause === 'dragging' || state.beforePause === 'paused' ? 'idle' : state.beforePause)
     : state.mode === 'dragging' ? 'idle' : state.mode;
-  const animationPaused = state.mode === 'paused' || state.mode === 'dragging';
+  const animationPaused = !framePreloadComplete || state.mode === 'paused' || state.mode === 'dragging';
   // Keep the default 4 fps gait; ease the increase above normal movement speed.
   const movementSpeedRatio = roamingSpeed / DEFAULT_APP_SETTINGS.roamingSpeedDipPerSecond;
   const walkPlaybackRate = movementSpeedRatio > 1 ? Math.sqrt(movementSpeedRatio) : movementSpeedRatio;
@@ -167,7 +167,7 @@ function Pet() {
     ? idleFrames[0] ?? STATIC_PET_IMAGE
     : availableFrames.length
       ? availableFrames[frameIndex % availableFrames.length]
-      : fallbackFrames[0] ?? STATIC_PET_IMAGE;
+      : (currentAnimation === 'sleep_loop' ? fallbackFrames.at(-1) : fallbackFrames[0]) ?? STATIC_PET_IMAGE;
   const characterImage = framePreloadComplete
     ? resolvedCharacterImage
     : ANIMATIONS.idle.frames[0] ?? STATIC_PET_IMAGE;
@@ -180,6 +180,7 @@ function Pet() {
       : state.mode === 'wave' ? '挥手中'
         : state.mode === 'heart' ? '比心中'
         : state.mode === 'sit' ? hasAnimationFrames ? '坐下休息' : '休息中，坐姿素材缺失，静止站立回退'
+        : isSleepAnimation(state.mode) ? '睡觉中'
         : state.mode === 'stand' ? '正在站起'
         : state.mode === 'walk' ? '行走中'
           : state.mode === 'idle' ? '待机' : state.mode;
@@ -247,7 +248,7 @@ function Pet() {
         alt="Q版桌宠"
         style={{
           height: DISPLAY_HEIGHT * petScalePercent / 100,
-          '--direction-scale': state.facing === 'left' && !usesDirectionalFrames && currentAnimation !== 'heart' && currentAnimation !== 'wave' ? -1 : 1,
+          '--direction-scale': state.facing === 'left' && !usesDirectionalFrames && currentAnimation !== 'heart' && currentAnimation !== 'wave' && !isSleepAnimation(currentAnimation) ? -1 : 1,
           '--art-scale': presentation?.scale ?? 1,
           '--art-offset-y': `${(presentation?.offsetYRatio ?? 0) * DISPLAY_HEIGHT * petScalePercent / 100}px`,
         } as React.CSSProperties}

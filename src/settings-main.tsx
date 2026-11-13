@@ -140,6 +140,8 @@ function SettingsApp() {
         </section>
         <section className="setting-card">
           <div className="card-heading"><h2>行为节奏</h2><p>每轮在设定范围内随机选择时长。</p></div>
+          <ToggleRow title="随机挥手" detail="空闲时偶尔挥手，坐下后停止。" checked={settings.randomWave} onChange={toggle('randomWave')} />
+          <SliderRow title="行为频率" detail="控制自主挥手间隔。" min={1} max={3} value={settings.behaviorFrequency} suffix={[' · 低', ' · 正常', ' · 高'][settings.behaviorFrequency - 1]} onChange={(value) => void save({ behaviorFrequency: value })} />
           <DurationRange title="每次行走" minValue={settings.minWalkSeconds} maxValue={settings.maxWalkSeconds} limit={60} onChange={(min, max) => void save({ minWalkSeconds: min, maxWalkSeconds: max })} />
           <DurationRange title="每次停留" minValue={settings.minRestSeconds} maxValue={settings.maxRestSeconds} limit={120} onChange={(min, max) => void save({ minRestSeconds: min, maxRestSeconds: max })} />
         </section>
@@ -149,6 +151,8 @@ function SettingsApp() {
           <ToggleRow title="互动文字气泡" detail="点击显示一条短句，约 2.6 秒后消失；气泡不会抢焦点。" checked={settings.interactionBubbles} onChange={toggle('interactionBubbles')} />
           <ToggleRow title="空闲后自动坐下" detail="暂停漫步并保持休息；缺少坐姿素材时静止站立。点击或拖动唤醒。" checked={settings.autoSit} onChange={toggle('autoSit')} />
           <SliderRow title="自动坐下等待时间" detail="距离上次互动的秒数，默认 60 秒。" min={15} max={600} value={settings.idleSitSeconds} suffix=" 秒" onChange={(value) => void save({ idleSitSeconds: value })} />
+          <ToggleRow title="自动睡觉" detail="空闲达到阈值时入睡，点击角色唤醒。" checked={settings.autoSleep} onChange={toggle('autoSleep')} />
+          <SliderRow title="睡眠等待时间" detail="从上次互动开始计时。开启自动坐下时，先完成坐下。" min={30} max={1800} value={settings.sleepTimeoutSeconds} suffix=" 秒" onChange={(value) => void save({ sleepTimeoutSeconds: value })} />
         </section>
       </>}
 
