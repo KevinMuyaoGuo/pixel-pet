@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, Tray } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, powerMonitor, screen, Tray } from 'electron';
 import type { IpcMainEvent, IpcMainInvokeEvent, Rectangle } from 'electron';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -28,6 +28,10 @@ let tray: Tray | null = null;
 let settingsStore: SettingsStore;
 let settings: AppSettings = { ...DEFAULT_APP_SETTINGS };
 let paused = false;
+let systemSuspended = false;
+let autonomousAction = false;
+let wakeAfterDrag = false;
+let sleepEnterId: number | null = null;
 let locked = false;
 let animationMode: MainMode = 'idle';
 let facing: Facing = 'right';
@@ -38,6 +42,7 @@ let interactionController: InteractionController | null = null;
 let actionSequence = 0;
 let activeActionId: number | null = null;
 let standFromFrame = 3;
+let wakeStandId: number | null = null;
 let isQuitting = false;
 
 type ScreenPoint = { screenX: number; screenY: number };
@@ -67,12 +72,12 @@ function isScreenPoint(value: unknown): value is ScreenPoint {
 
 function getUiState(): PetUiState {
   return {
-    paused,
+    paused: paused || systemSuspended,
     locked,
     roaming: wanderController?.isEnabled ?? false,
-    mode: dragOrigin ? 'dragging' : interactionController?.isSitting ? 'sit' : animationMode,
+    mode: dragOrigin ? 'dragging' : (interactionController?.restingMode ?? animationMode),
     direction: facing,
-    actionId: activeActionId,
+    actionId: sleepEnterId ?? activeActionId,
     standFromFrame,
   };
 }
@@ -91,7 +96,15 @@ function getAppSnapshot(): AppSnapshot {
 }
 
 function sendUiState() {
-  interactionController?.setBlocked(paused || Boolean(dragOrigin) || activeActionId !== null || !petWindow?.isVisible());
+  publishUiState();
+}
+
+function publishUiState(preserveIdle = false) {
+  interactionController?.setBlocked(
+    paused || systemSuspended || Boolean(dragOrigin) || activeActionId !== null || !petWindow?.isVisible(),
+    preserveIdle || autonomousAction,
+  );
+  if (activeActionId === null) autonomousAction = false;
   if (petWindow && !petWindow.isDestroyed()) petWindow.webContents.send('pet:ui-state', getUiState());
   refreshTrayMenu();
 }
@@ -104,8 +117,10 @@ function broadcastSnapshot() {
   refreshTrayMenu();
 }
 
-function startPetAction(mode: ActionMode) {
-  if (paused || dragOrigin || !petWindow || petWindow.isDestroyed()) return;
+function startPetAction(mode: ActionMode, autonomous = false) {
+  if (paused || systemSuspended || dragOrigin || !petWindow?.isVisible()) return;
+  if (activeActionId !== null && (animationMode === 'sleep_exit' || activeActionId === wakeStandId)) return;
+  if (interactionController?.isSleeping) mode = 'sleep_exit';
   if (activeActionId !== null && animationMode === mode) {
     interactionController?.activity();
     return;
@@ -113,8 +128,10 @@ function startPetAction(mode: ActionMode) {
   // Publish the new action before waking SIT, avoiding an intermediate WALK frame.
   activeActionId = ++actionSequence;
   animationMode = mode;
-  interactionController?.activity();
+  autonomousAction = autonomous;
+  // Suspend roaming before clearing the rest state.
   wanderController?.beginAction(mode);
+  if (!autonomous) interactionController?.activity();
   sendUiState();
 }
 
@@ -217,7 +234,7 @@ function setRoaming(enabled: boolean) {
 
 function setPaused(value: boolean) {
   paused = value;
-  wanderController?.setPaused(value || Boolean(interactionController?.isSitting));
+  wanderController?.setPaused(value || systemSuspended || Boolean(interactionController?.isSitting));
   sendUiState();
   broadcastSnapshot();
 }
@@ -242,7 +259,9 @@ function applySettings(previous: AppSettings) {
   applyScaleChange(previous.petScalePercent);
   wanderController?.configure(configuredWanderValues());
   if (!settings.allowAutonomousRoaming && wanderController?.isEnabled) wanderController.stop();
-  interactionController?.configure({ autoSit: settings.autoSit, idleSeconds: settings.idleSitSeconds, bubbles: settings.interactionBubbles });
+  interactionController?.configure({ autoSit: settings.autoSit, idleSeconds: settings.idleSitSeconds, bubbles: settings.interactionBubbles,
+    autoSleep: settings.autoSleep, sleepTimeoutSeconds: settings.sleepTimeoutSeconds,
+    randomWave: settings.randomWave, behaviorFrequency: settings.behaviorFrequency });
 
   if (settings.showDockIcon !== previous.showDockIcon && process.platform === 'darwin' && app.dock) {
     if (settings.showDockIcon) app.dock.show();
@@ -588,7 +607,9 @@ ipcMain.on('pet:action-start', (event, mode: unknown) => {
   startPetAction(mode);
 });
 ipcMain.on('pet:click', (event) => {
-  if (!isAppSender(event) || !petWindow || event.sender !== petWindow.webContents || paused || dragOrigin) return;
+  if (!isAppSender(event) || !petWindow || event.sender !== petWindow.webContents || paused || systemSuspended || dragOrigin) return;
+  if (interactionController?.isSleeping) { startPetAction('sleep_exit'); return; }
+  if (activeActionId !== null && (animationMode === 'sleep_exit' || activeActionId === wakeStandId)) return;
   // Keep the current phrase paired with its one-shot action until it finishes.
   if (activeActionId !== null && (animationMode === 'wave' || animationMode === 'heart')) return;
   const response = interactionController?.activity(true);
@@ -596,7 +617,7 @@ ipcMain.on('pet:click', (event) => {
 });
 ipcMain.on('pet:hover', (event, frame: unknown) => {
   if (!isAppSender(event) || event.sender !== petWindow?.webContents || paused || dragOrigin
-    || !interactionController?.isSitting || activeActionId !== null) return;
+    || systemSuspended || interactionController?.restingMode !== 'sit' || activeActionId !== null) return;
   if (frame !== null && (typeof frame !== 'number' || !Number.isInteger(frame) || frame < 0 || frame > 3)) return;
   if (frame === null) {
     interactionController.activity();
@@ -607,19 +628,34 @@ ipcMain.on('pet:hover', (event, frame: unknown) => {
 });
 ipcMain.on('pet:action-finish', (event, actionId: unknown) => {
   if (!isAppSender(event) || !petWindow || event.sender !== petWindow.webContents || dragOrigin
-    || typeof actionId !== 'number' || !Number.isSafeInteger(actionId) || actionId !== activeActionId) return;
+    || paused || systemSuspended || typeof actionId !== 'number' || !Number.isSafeInteger(actionId)) return;
+  if (actionId === sleepEnterId && interactionController?.restingMode === 'sleep_enter') {
+    interactionController.finishSleepEnter();
+    return;
+  }
+  if (actionId !== activeActionId) return;
+  if (animationMode === 'sleep_exit') {
+    standFromFrame = 3;
+    activeActionId = wakeStandId = ++actionSequence;
+    // Keep the same roaming suspension through both wake-up clips.
+    wanderController?.beginAction('stand');
+    return;
+  }
+  const returnToIdle = animationMode === 'wave' || activeActionId === wakeStandId;
   activeActionId = null;
-  wanderController?.finishAction(animationMode === 'wave');
+  wakeStandId = null;
+  wanderController?.finishAction(returnToIdle);
   if (!wanderController?.isEnabled) animationMode = 'idle';
   sendUiState();
 });
 ipcMain.on('pet:show-context-menu', (event) => {
   if (!isAppSender(event) || !petWindow || event.sender !== petWindow.webContents) return;
-  interactionController?.activity();
+  if (!interactionController?.isSleeping) interactionController?.activity();
   createContextMenu().popup({ window: petWindow });
 });
 ipcMain.on('pet:begin-drag', (event, point: unknown) => {
   if (!isAppSender(event) || locked || !isScreenPoint(point) || !petWindow || event.sender !== petWindow.webContents) return;
+  wakeAfterDrag = Boolean(interactionController?.isSleeping || animationMode === 'sleep_exit');
   const [windowX, windowY] = petWindow.getPosition();
   dragOrigin = { pointerX: point.screenX, pointerY: point.screenY, windowX, windowY };
   activeActionId = null;
@@ -644,10 +680,27 @@ ipcMain.on('pet:end-drag', (event) => {
   if (!isAppSender(event) || !dragOrigin || !petWindow || event.sender !== petWindow.webContents) return;
   dragOrigin = null;
   interactionController?.activity();
+  if (wakeAfterDrag) startPetAction('sleep_exit');
+  wakeAfterDrag = false;
   wanderController?.onManualDragEnded();
-  animationMode = wanderController?.isEnabled ? wanderController.currentMode : 'idle';
+  if (activeActionId === null) animationMode = wanderController?.isEnabled ? wanderController.currentMode : 'idle';
   sendUiState();
 });
+
+function onSystemSuspend() {
+  systemSuspended = true;
+  wanderController?.setPaused(true);
+  sendUiState();
+  interactionController?.dismissBubble();
+}
+
+function onSystemResume() {
+  systemSuspended = false;
+  publishUiState(true);
+  wanderController?.setPaused(paused || Boolean(interactionController?.isSitting));
+  handleDisplayConfigurationChanged();
+}
+
 let displayEventsRegistered = false;
 function removeDisplayListeners() {
   if (!displayEventsRegistered) return;
@@ -689,11 +742,17 @@ app.whenReady().then(() => {
   });
   wanderController.configure(configuredWanderValues());
   interactionController = new InteractionController(() => {
-    wanderController?.setPaused(paused || Boolean(interactionController?.isSitting));
+    if (interactionController?.restingMode === 'sleep_enter') sleepEnterId ??= ++actionSequence;
+    else sleepEnterId = null;
+    wanderController?.setPaused(paused || systemSuspended || Boolean(interactionController?.isSitting));
     sendUiState();
     syncBubble();
-  });
-  interactionController.configure({ autoSit: settings.autoSit, idleSeconds: settings.idleSitSeconds, bubbles: settings.interactionBubbles });
+  }, undefined, undefined, () => startPetAction('wave', true));
+  interactionController.configure({ autoSit: settings.autoSit, idleSeconds: settings.idleSitSeconds, bubbles: settings.interactionBubbles,
+    autoSleep: settings.autoSleep, sleepTimeoutSeconds: settings.sleepTimeoutSeconds,
+    randomWave: settings.randomWave, behaviorFrequency: settings.behaviorFrequency });
+  powerMonitor.on('suspend', onSystemSuspend);
+  powerMonitor.on('resume', onSystemResume);
   screen.on('display-added', handleDisplayConfigurationChanged);
   screen.on('display-removed', handleDisplayConfigurationChanged);
   screen.on('display-metrics-changed', handleDisplayConfigurationChanged);
@@ -713,6 +772,8 @@ app.on('before-quit', () => {
   bubbleWindow?.destroy();
   bubbleWindow = null;
   removeDisplayListeners();
+  powerMonitor.removeListener('suspend', onSystemSuspend);
+  powerMonitor.removeListener('resume', onSystemResume);
   if (savePositionTimer) clearTimeout(savePositionTimer);
   savePositionTimer = undefined;
   savePosition();

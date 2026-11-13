@@ -1,5 +1,5 @@
-export type PetMode = 'idle' | 'walk' | 'wave' | 'heart' | 'sit' | 'stand' | 'dragging';
-export type PetAnimationState = 'IDLE' | 'WALK_LEFT' | 'WALK_RIGHT' | 'WAVE' | 'HEART' | 'SIT' | 'STAND' | 'DRAGGING' | 'PAUSED';
+export type PetMode = 'idle' | 'walk' | 'wave' | 'heart' | 'sit' | 'sleep_enter' | 'sleep_loop' | 'sleep_exit' | 'stand' | 'dragging';
+export type PetAnimationState = 'IDLE' | 'WALK_LEFT' | 'WALK_RIGHT' | 'WAVE' | 'HEART' | 'SIT' | 'SLEEP_ENTER' | 'SLEEP_LOOP' | 'SLEEP_EXIT' | 'STAND' | 'DRAGGING' | 'PAUSED';
 
 export type PetUiState = {
   paused: boolean;

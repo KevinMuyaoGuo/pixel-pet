@@ -59,7 +59,7 @@ function makeWander(clock) {
   return { controller, window, modes, display: area => { displays = [{ id: 2, workArea: area }]; }, lock: () => { locked = true; } };
 }
 
-test('60-second inactivity sits once, interaction wakes, and disposal clears the deadline', () => {
+test('sleep follows sit at 180 seconds of inactivity, excluding pauses', () => {
   const clock = new Clock();
   let changes = 0;
   const controller = new InteractionController(() => changes++, clock);
@@ -69,12 +69,46 @@ test('60-second inactivity sits once, interaction wakes, and disposal clears the
   clock.advance(1);
   assert.equal(controller.isSitting, true);
   assert.equal(changes, 1);
+  clock.advance(119_999);
+  assert.equal(controller.restingMode, 'sit');
+  controller.setBlocked(true);
+  clock.advance(5_000);
+  assert.equal(controller.restingMode, 'sit');
+  controller.setBlocked(false);
+  clock.advance(1);
+  assert.equal(controller.restingMode, 'sleep_enter');
+  controller.finishSleepEnter();
+  assert.equal(controller.restingMode, 'sleep_loop');
+  controller.finishSleepEnter();
+  assert.equal(controller.restingMode, 'sleep_loop');
   assert.equal(clock.tasks.size, 0);
   controller.activity();
   assert.equal(controller.isSitting, false);
   assert.equal(clock.tasks.size, 1);
   controller.dispose();
   assert.equal(clock.tasks.size, 0);
+});
+
+test('autonomous waves preserve the idle deadline and stop once seated', () => {
+  const clock = new Clock();
+  let waves = 0;
+  const controller = new InteractionController(() => {}, clock, undefined, () => {
+    waves++;
+    controller.setBlocked(true);
+  });
+  controller.setBlocked(false);
+  const waveAt = [...clock.tasks.values()][0].at;
+  clock.advance(waveAt);
+  assert.equal(waves, 1);
+  assert.equal(clock.tasks.size, 0);
+  clock.advance(1_500);
+  controller.setBlocked(false, true);
+  clock.advance(60_000 - waveAt);
+  assert.equal(controller.restingMode, 'sit');
+  clock.advance(120_000);
+  assert.equal(waves, 1);
+  assert.equal(controller.restingMode, 'sleep_enter');
+  controller.dispose();
 });
 
 test('rapid clicks replace one bubble and share one timer; disabling clears it', () => {
@@ -90,7 +124,7 @@ test('rapid clicks replace one bubble and share one timer; disabling clears it',
   clock.advance(2600);
   assert.equal(controller.bubble.message, null);
   controller.activity(true);
-  controller.configure({ autoSit: false, idleSeconds: 60, bubbles: false });
+  controller.configure({ autoSit: false, autoSleep: false, idleSeconds: 60, bubbles: false });
   assert.equal(controller.bubble.message, null);
   assert.equal(clock.tasks.size, 0);
   controller.dispose();
@@ -112,7 +146,7 @@ test('click phrases and actions are selected together; unassigned phrases have n
     assert.equal(controller.bubble.message, expected[index].message);
     assert.equal(clock.tasks.size, 1);
   }
-  controller.configure({ autoSit: false, idleSeconds: 60, bubbles: false });
+  controller.configure({ autoSit: false, autoSleep: false, idleSeconds: 60, bubbles: false });
   index = 0;
   assert.deepEqual(controller.activity(true), expected[0]);
   assert.equal(controller.bubble.message, null);
@@ -150,7 +184,8 @@ test('SIT suspends roaming without moving the window; wake resumes and stop leav
   clock.advance(60_000);
   assert.equal(interaction.isSitting, true);
   const restingPosition = window.getPosition();
-  clock.advance(60_000);
+  clock.advance(120_000);
+  interaction.finishSleepEnter();
   assert.deepEqual(window.getPosition(), restingPosition);
   assert.equal(clock.tasks.size, 0);
   interaction.activity();
@@ -306,7 +341,7 @@ test('settings migrate v1, reject invalid patches, persist on restart, and recov
     const path = join(folder, 'settings.json');
     writeFileSync(path, JSON.stringify({ schemaVersion: 1, roamingSpeedDipPerSecond: 60, petScalePercent: 150 }));
     const store = new SettingsStore(path);
-    assert.equal(store.value.schemaVersion, 2);
+    assert.equal(store.value.schemaVersion, 3);
     assert.equal(store.value.idleSitSeconds, 60);
     assert.equal(store.value.roamingSpeedDipPerSecond, 60);
     store.update({ autoSit: false, idleSitSeconds: 90, interactionBubbles: false });

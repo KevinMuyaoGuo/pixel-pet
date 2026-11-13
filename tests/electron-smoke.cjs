@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, screen } = require('electron');
+const { app, BrowserWindow, Menu, powerMonitor, screen } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -26,7 +26,7 @@ async function until(predicate, limit = 10000) {
   throw new Error('Timed out waiting for native app state');
 }
 const results = [];
-const watchdog = setTimeout(() => { console.error('SMOKE TIMEOUT'); app.exit(1); }, 65000);
+const watchdog = setTimeout(() => { console.error('SMOKE TIMEOUT'); app.exit(1); }, 125000);
 
 (async () => {
   if (!reopen) {
@@ -74,6 +74,10 @@ const watchdog = setTimeout(() => { console.error('SMOKE TIMEOUT'); app.exit(1);
     assert.equal(settings.roamingSpeedDipPerSecond, 120);
     assert.equal(settings.idleSitSeconds, 15);
     assert.equal(settings.allowClickHeart, false);
+    assert.equal(settings.autoSleep, true);
+    assert.equal(settings.sleepTimeoutSeconds, 30);
+    assert.equal(settings.randomWave, false);
+    assert.equal(settings.behaviorFrequency, 3);
     assert.equal((await ui()).mode, 'idle');
     const saved = JSON.parse(fs.readFileSync(path.join(data, 'pixel-pet/pet-window.json'), 'utf8'));
     assert.deepEqual(pet.getPosition(), [saved.x, saved.y]);
@@ -237,6 +241,42 @@ const watchdog = setTimeout(() => { console.error('SMOKE TIMEOUT'); app.exit(1);
     menu('隐藏桌宠'); assert.equal(pet.isVisible(), false);
     menu('显示桌宠'); assert.equal(pet.isVisible(), true);
     results.push('tray hide/show stays usable');
+    await js('window.appBridge.updateSettings({autoSit:true, idleSitSeconds:15, autoSleep:true, sleepTimeoutSeconds:30, randomWave:false, behaviorFrequency:3})');
+    await js('window.appBridge.setRoaming(true)');
+    await until(async () => (await ui()).mode === 'sit', 20_000);
+    await until(async () => (await ui()).mode === 'sleep_enter', 20_000);
+    const enterId = (await ui()).actionId;
+    await until(async () => (await ui()).mode === 'sleep_loop');
+    const sleepPosition = pet.getPosition();
+    const sleepFrame = () => js('document.querySelector(".pet-art").src');
+    await until(async () => (await sleepFrame()).includes('/sleep_loop/'));
+    const firstLoopFrame = await sleepFrame();
+    await until(async () => (await sleepFrame()) !== firstLoopFrame);
+    powerMonitor.emit('suspend');
+    await until(async () => await js('document.querySelector("main").dataset.mode === "paused"'));
+    const frozenSleepFrame = await sleepFrame();
+    await wait(650);
+    assert.equal(await sleepFrame(), frozenSleepFrame);
+    assert.deepEqual(pet.getPosition(), sleepPosition);
+    powerMonitor.emit('resume');
+    await until(async () => (await sleepFrame()) !== frozenSleepFrame);
+    await js('window.petBridge.click()');
+    await until(async () => (await ui()).mode === 'sleep_exit');
+    const wakeId = (await ui()).actionId;
+    await js(`window.petBridge.finishAction(${enterId}); for (let i = 0; i < 30; i++) window.petBridge.click()`);
+    assert.equal((await ui()).actionId, wakeId);
+    await until(async () => (await sleepFrame()).endsWith('/sleep_exit_04.png'));
+    await until(async () => (await ui()).mode === 'stand');
+    const wakeStandId = (await ui()).actionId;
+    await js(`window.petBridge.finishAction(${wakeId}); window.petBridge.click()`);
+    assert.equal((await ui()).actionId, wakeStandId);
+    assert.deepEqual(pet.getPosition(), sleepPosition);
+    await until(async () => (await sleepFrame()).endsWith('/sit_01.png'));
+    await until(async () => (await ui()).mode === 'idle');
+    assert.deepEqual(pet.getPosition(), sleepPosition);
+    assert.equal((await ui()).roaming, true);
+    results.push('sleep enter and loop, simulated suspend/resume, rapid click wakes once, stands, and finishes in idle');
+
   }
   fs.writeFileSync(marker, JSON.stringify(reopen ? { ...JSON.parse(fs.readFileSync(marker, 'utf8')), reopenResults: results } : { data, results }, null, 2));
   console.log(JSON.stringify({ reopen, results, data }, null, 2));
